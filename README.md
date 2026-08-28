@@ -57,7 +57,7 @@ runtime packages, and no licensing restrictions.
 - Rounded-corner borders and filled rounded boxes
 - Per-edge borders — `BorderTop`, `BorderBottom`, `BorderLeft`, `BorderRight`
 - Horizontal and vertical alignment
-- Column, Row, and Table layouts
+- Column, Row, and Table layouts — with column- and row-spanning table cells
 - PNG and JPEG image embedding
 - Horizontal and vertical rule lines
  - Explicit page breaks via `PageBreak()`
@@ -143,7 +143,7 @@ For complete API reference and detailed guides, visit the [docs](https://github.
 
 - **[Getting Started](https://github.com/sahebansari/TerraPDF/blob/master/docs/getting-started.md)** — Installation, Quick Start, and basic usage
 - **[Text & Spans](https://github.com/sahebansari/TerraPDF/blob/master/docs/text-and-spans.md)** — Single-span and multi-span text, styling, page numbers
-- **[Layout](https://github.com/sahebansari/TerraPDF/blob/master/docs/layout.md)** — Column, Row, and Table layouts with alignment and spacing
+- **[Layout](https://github.com/sahebansari/TerraPDF/blob/master/docs/layout.md)** — Column, Row, and Table layouts with alignment, spacing, and cell spans
 - **[Row and Column Layout](https://github.com/sahebansari/TerraPDF/blob/master/docs/row-and-column-layout.md)** — Detailed Row and Column layout examples
 - **[Decorators](https://github.com/sahebansari/TerraPDF/blob/master/docs/decorators.md)** — Padding, margin, backgrounds, borders, and styling
 - **[Images](https://github.com/sahebansari/TerraPDF/blob/master/docs/images.md)** — PNG and JPEG embedding with sizing and alignment

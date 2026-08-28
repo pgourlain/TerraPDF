@@ -33,10 +33,45 @@ internal sealed class Table : Element
     /// </summary>
     internal int HeaderRowCount { get; set; }
 
-    internal TableCell AddCell(int column, int row, int columnSpan = 1, int rowSpan = 1)
+    /// <summary>
+    /// Grid slots already covered by a previously placed cell, keyed by 1-based row.
+    /// A cell with a column span occupies several slots in its own row; a cell with a
+    /// row span also occupies slots in the rows below it, so the rows that follow skip
+    /// over it instead of drawing through it.
+    /// </summary>
+    private readonly Dictionary<int, HashSet<int>> _occupied = [];
+
+    private bool IsOccupied(int row, int column) =>
+        _occupied.TryGetValue(row, out var columns) && columns.Contains(column);
+
+    private void Occupy(int row, int column)
     {
+        if (!_occupied.TryGetValue(row, out var columns))
+            _occupied[row] = columns = [];
+        columns.Add(column);
+    }
+
+    /// <summary>
+    /// Places a cell in the first free column of <paramref name="row"/> and reserves every
+    /// grid slot it covers.  Callers append cells left to right without tracking columns
+    /// themselves — spans are what move the cursor, so a span can never be overlapped by
+    /// the cell that follows it or by the next row.
+    /// </summary>
+    internal TableCell PlaceCell(int row, int columnSpan = 1, int rowSpan = 1)
+    {
+        columnSpan = Math.Max(1, columnSpan);
+        rowSpan    = Math.Max(1, rowSpan);
+
+        int column = 1;
+        while (IsOccupied(row, column)) column++;
+
         var cell = new TableCell { Column = column, Row = row, ColumnSpan = columnSpan, RowSpan = rowSpan };
         Cells.Add(cell);
+
+        for (int r = row; r < row + rowSpan; r++)
+            for (int c = column; c < column + columnSpan; c++)
+                Occupy(r, c);
+
         return cell;
     }
 
@@ -86,21 +121,50 @@ internal sealed class Table : Element
             : 0;
         var heights = new double[rowCount];
 
+        // Pass 1 — single-row cells establish each row's natural height.
         foreach (var cell in Cells)
         {
-            if (cell.RowSpan > 1) continue;  // span cells are sized by the rows they cover, not measured here
+            if (cell.RowSpan > 1) continue;
 
-            double cellWidth = 0;
-            for (int c = cell.Column - 1; c < cell.Column - 1 + cell.ColumnSpan && c < colWidths.Length; c++)
-                cellWidth += colWidths[c];
-
-            var sz = cell.Slot.Measure(cellWidth, double.MaxValue, defaultStyle, totalPagesHint);
+            var sz = cell.Slot.Measure(CellWidth(cell, colWidths), double.MaxValue, defaultStyle, totalPagesHint);
             int r  = cell.Row - 1;
             if (r < heights.Length && sz.Height > heights[r])
                 heights[r] = sz.Height;
         }
 
+        // Pass 2 — a spanned cell taller than the rows it covers grows them, sharing the
+        // shortfall evenly, so its content stays inside the span instead of overflowing
+        // into whatever is drawn next.
+        foreach (var cell in Cells)
+        {
+            if (cell.RowSpan <= 1) continue;
+
+            int first = cell.Row - 1;
+            if (first < 0 || first >= heights.Length) continue;
+            int end = Math.Min(first + cell.RowSpan, heights.Length);   // exclusive
+
+            var sz = cell.Slot.Measure(CellWidth(cell, colWidths), double.MaxValue, defaultStyle, totalPagesHint);
+
+            double covered = 0;
+            for (int r = first; r < end; r++) covered += heights[r];
+
+            double deficit = sz.Height - covered;
+            if (deficit <= 0) continue;
+
+            double share = deficit / (end - first);
+            for (int r = first; r < end; r++) heights[r] += share;
+        }
+
         return heights;
+    }
+
+    /// <summary>Total width of the columns <paramref name="cell"/> spans.</summary>
+    private static double CellWidth(TableCell cell, double[] colWidths)
+    {
+        double width = 0;
+        for (int c = cell.Column - 1; c < cell.Column - 1 + cell.ColumnSpan && c < colWidths.Length; c++)
+            if (c >= 0) width += colWidths[c];
+        return width;
     }
 
     // -- Measure ---------------------------------------------------
@@ -161,9 +225,7 @@ internal sealed class Table : Element
             if (ci < 0 || ci >= colWidths.Length || ri >= rowHeights.Length) continue;
 
             double cellX = colX[ci];
-            double cellW = 0;
-            for (int c = ci; c < ci + cell.ColumnSpan && c < colWidths.Length; c++)
-                cellW += colWidths[c];
+            double cellW = CellWidth(cell, colWidths);
 
             // Height: sum spanned rows that are present in the drawn set; truncate at page boundary
             double cellH = 0;

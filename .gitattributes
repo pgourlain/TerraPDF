@@ -40,9 +40,29 @@
 #
 # image files are treated as binary by default.
 ###############################################################################
-#*.jpg   binary
-#*.png   binary
-#*.gif   binary
+*.jpg   binary
+*.png   binary
+*.gif   binary
+*.jpeg  binary
+*.ico   binary
+*.bmp   binary
+*.webp  binary
+
+###############################################################################
+# behavior for font and other binary assets
+#
+# Fonts are not covered by the stock template. Without these rules "* text=auto"
+# classifies them as text, and git may insert or strip CR bytes on checkout,
+# silently corrupting an embedded font or image.
+###############################################################################
+*.ttf   binary
+*.otf   binary
+*.ttc   binary
+*.woff  binary
+*.woff2 binary
+*.pdf   binary
+*.snk   binary
+*.nupkg binary
 
 ###############################################################################
 # diff behavior for common document formats

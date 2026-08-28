@@ -154,10 +154,70 @@ container.Table(table =>
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `Cell()` | `IContainer` | Next cell slot (left to right); supports all decorators |
+| `Cell(columnSpan = 1, rowSpan = 1)` | `IContainer` | Next free cell slot (left to right); supports all decorators |
 
 > **Tip:** Cells support the full decorator chain:
 > `row.Cell().Background(bg).Padding(6).AlignRight().Text("value")`
+
+### Spanning columns and rows
+
+`Cell` takes an optional `columnSpan` and `rowSpan`. A cell is placed in the first
+column not already covered by an earlier cell, so a span moves the cursor past
+everything it covers — you write one `Cell` call per cell the row actually contains,
+with no placeholder calls for the columns a span already fills.
+
+```csharp
+container.Table(table =>
+{
+    table.ColumnsDefinition(cols =>
+    {
+        cols.RelativeColumn();
+        cols.RelativeColumn();
+        cols.RelativeColumn();
+    });
+
+    table.Row(row =>
+    {
+        row.Cell(columnSpan: 2).Background("#eeeeee").Padding(6).Text("Spans columns 1-2");
+        row.Cell().Padding(6).Text("Column 3");          // lands in column 3, not column 2
+    });
+
+    table.Row(row =>
+    {
+        row.Cell(rowSpan: 2).Padding(6).Text("Spans rows 2-3");
+        row.Cell().Padding(6).Text("Row 2, column 2");
+        row.Cell().Padding(6).Text("Row 2, column 3");
+    });
+
+    table.Row(row =>
+    {
+        row.Cell().Padding(6).Text("Row 3, column 2");   // column 1 is still held by the span
+        row.Cell().Padding(6).Text("Row 3, column 3");
+    });
+});
+```
+
+A spanned cell is measured like any other: when its content is taller than the rows
+it covers, those rows grow to hold it. Spans below `1` are treated as `1`.
+
+### Pagination
+
+A table splits between rows when it is taller than the page:
+
+- **Header rows repeat** at the top of every continuation page. Declare them with
+  `HeaderRow` before any `Row` call.
+- **A table with no header row still splits** — it simply has nothing to repeat.
+- **A table works wherever you put it**, whether it is an item inside a `Column` or
+  placed straight into `page.Content()`.
+- **A row span is never divided by a page break.** The rows a span covers travel
+  together, so the split falls above or below the span, never through it. A group of
+  spanned rows taller than a whole page is emitted anyway rather than looping.
+
+> **Note:** Keep header rows self-contained. A row span that starts in a *header*
+> row and reaches into data rows renders correctly on the first page, but is
+> truncated to the header rows on every continuation page — the header block
+> repeats, while the data rows it also covers stay behind on the previous page.
+> Row spans that start in a data row are unaffected.
 
 ---
 

@@ -256,9 +256,76 @@ public sealed class DocumentComposer : IDocumentContainer
 
 
     /// <summary>
+    /// True when the content slot holds a table that is not inside a Column and is
+    /// taller than the page, so it has to be split between rows rather than drawn in
+    /// one overflowing piece.
+    /// </summary>
+    private static bool ContentNeedsTableSplitting(
+        PageDescriptor d, double contentW, double contentH, int totalPagesHint)
+    {
+        var (table, _, _, tInsetW, tInsetH, _) = FindWithChrome<Table>(d.ContentSlot.Child);
+        if (table is null) return false;
+
+        var colWidths  = table.GetColumnWidths(contentW + tInsetW);
+        var rowHeights = table.GetRowHeights(colWidths, d.DefaultStyle, totalPagesHint);
+        return rowHeights.Sum() - tInsetH > contentH;
+    }
+
+    /// <summary>
+    /// Splits a table's data rows into the smallest contiguous runs that no row span
+    /// crosses.  Each run has to be placed on a single page: a spanned cell is drawn
+    /// from the page its first row lands on, so a run broken at a page boundary would
+    /// leave the cell cut in half with nothing continuing it overleaf.
+    /// Rows are 0-based and header rows are excluded — they repeat on every slice.
+    /// </summary>
+    private static List<(int Start, int End)> DataRowGroups(Table table, int headerRows, int totalRows)
+    {
+        // reach[r] = the last row that must stay on the same page as row r.
+        var reach = new int[totalRows];
+        for (int r = 0; r < totalRows; r++) reach[r] = r;
+
+        foreach (var cell in table.Cells)
+        {
+            if (cell.RowSpan <= 1) continue;
+
+            int first = cell.Row - 1;
+            if (first < 0 || first >= totalRows) continue;
+
+            int last = Math.Min(first + cell.RowSpan - 1, totalRows - 1);
+            if (last > reach[first]) reach[first] = last;
+        }
+
+        var groups = new List<(int Start, int End)>();
+        for (int start = Math.Max(0, headerRows); start < totalRows; )
+        {
+            int end = reach[start];
+            for (int scan = start; scan <= end; scan++)
+                if (reach[scan] > end) end = reach[scan];
+
+            groups.Add((start, end));
+            start = end + 1;
+        }
+        return groups;
+    }
+
+    private static double GroupHeight((int Start, int End) group, double[] rowHeights)
+    {
+        double h = 0;
+        for (int r = group.Start; r <= group.End && r < rowHeights.Length; r++)
+            h += rowHeights[r];
+        return h;
+    }
+
+    private static void AddGroup(List<int> indices, (int Start, int End) group)
+    {
+        for (int r = group.Start; r <= group.End; r++)
+            indices.Add(r);
+    }
+
+    /// <summary>
     /// Lays out one <see cref="PageDescriptor"/> into page fragments, splitting a
-    /// top-level Column between items and header-row tables between rows exactly
-    /// as the renderer will draw them.
+    /// top-level Column between items and tables between rows exactly as the
+    /// renderer will draw them.
     /// </summary>
     private static List<PageFragment> LayoutDescriptor(PageDescriptor d, int totalPagesHint)
     {
@@ -280,13 +347,27 @@ public sealed class DocumentComposer : IDocumentContainer
         var fragments = new List<PageFragment>();
 
         // ── Non-Column content: single page (decorators draw via the slot) ────
+        // A table is the exception.  One placed straight into the content slot
+        // still has to paginate, so when it is taller than the page it is wrapped
+        // in a synthetic one-item Column and takes exactly the same row-splitting
+        // path as a table inside a Column.  Content that does fit keeps the
+        // single-page path, where decorators receive the whole content box.
         if (col is null)
         {
-            var single = new PageFragment { IsFirstOfDescriptor = true };
-            if (d.ContentSlot.Child is not null)
-                single.Items.Add(new PlacedItem(d.ContentSlot, contentX, contentY, contentW, contentH));
-            fragments.Add(single);
-            return fragments;
+            if (!ContentNeedsTableSplitting(d, contentW, contentH, totalPagesHint))
+            {
+                var single = new PageFragment { IsFirstOfDescriptor = true };
+                if (d.ContentSlot.Child is not null)
+                    single.Items.Add(new PlacedItem(d.ContentSlot, contentX, contentY, contentW, contentH));
+                fragments.Add(single);
+                return fragments;
+            }
+
+            var wrapper = new Column();
+            wrapper.Items.Add(d.ContentSlot);
+            col    = wrapper;
+            insetX = insetY = insetW = insetH = 0;
+            chrome = [];
         }
 
         // Apply wrapper insets (e.g. PaddingVertical) to the item area.
@@ -347,22 +428,39 @@ public sealed class DocumentComposer : IDocumentContainer
             // decorators normally via item.Draw.
             var (table, tInsetX, tInsetY, tInsetW, tInsetH, _) = FindWithChrome<Table>(item.Child);
 
-            if (table is not null && table.HeaderRowCount > 0)
+            double     tableX     = itemsX + tInsetX;
+            double     tableW     = itemsW + tInsetW;
+            double[]?  colWidths  = null;
+            double[]?  rowHeights = null;
+            bool       splitTable = false;
+
+            if (table is not null)
+            {
+                colWidths  = table.GetColumnWidths(tableW);
+                rowHeights = table.GetRowHeights(colWidths, d.DefaultStyle, totalPagesHint);
+
+                // Header rows repeat on every slice, so a table that declares them always
+                // goes through the splitting path.  A header-less table is split only when
+                // it cannot fit a page at all — one that fits is placed as an ordinary item
+                // so its own decorators (background, border) still paint around it.
+                splitTable = table.HeaderRowCount > 0
+                          || rowHeights.Sum() - tInsetH > contItemsH;
+            }
+
+            if (splitTable)
             {
                 // Split the table between rows; header rows repeat on every slice.
-                double tableX = itemsX + tInsetX;
-                double tableW = itemsW + tInsetW;
+                int totalRows = rowHeights!.Length;
 
-                var colWidths  = table.GetColumnWidths(tableW);
-                var rowHeights = table.GetRowHeights(colWidths, d.DefaultStyle, totalPagesHint);
-                int totalRows  = rowHeights.Length;
-                int dataCount  = Math.Max(0, totalRows - table.HeaderRowCount);
-
-                var    headerIndices = Enumerable.Range(0, Math.Min(table.HeaderRowCount, totalRows)).ToList();
+                var    headerIndices = Enumerable.Range(0, Math.Min(table!.HeaderRowCount, totalRows)).ToList();
                 double tHdrH         = headerIndices.Sum(r => rowHeights[r]);
 
+                // Rows joined by a row span have to travel together, so the splitter moves
+                // in groups of rows rather than one row at a time.
+                var groups = DataRowGroups(table, table.HeaderRowCount, totalRows);
+
                 bool isFirstSlice = true;
-                int  dr           = 0;
+                int  gi           = 0;
 
                 do
                 {
@@ -380,42 +478,39 @@ public sealed class DocumentComposer : IDocumentContainer
                     var    batchIndices = new List<int>(headerIndices);
                     bool   batchHasData = false;
 
-                    while (dr < dataCount)
+                    while (gi < groups.Count)
                     {
-                        int    ar = table.HeaderRowCount + dr;
-                        double rh = ar < rowHeights.Length ? rowHeights[ar] : 0;
+                        double groupH = GroupHeight(groups[gi], rowHeights);
 
-                        if (batchH + rh > avail && batchHasData)
+                        if (batchH + groupH > avail && batchHasData)
                             break;
 
-                        batchH += rh;
-                        batchIndices.Add(ar);
+                        batchH += groupH;
+                        AddGroup(batchIndices, groups[gi]);
                         batchHasData = true;
-                        dr++;
+                        gi++;
                     }
 
-                    // A single row taller than the page: force it out anyway so
+                    // A single group taller than the page: force it out anyway so
                     // layout always makes progress.
-                    if (!batchHasData && dr < dataCount)
+                    if (!batchHasData && gi < groups.Count)
                     {
-                        int    ar = table.HeaderRowCount + dr;
-                        double rh = ar < rowHeights.Length ? rowHeights[ar] : 0;
-                        batchH += rh;
-                        batchIndices.Add(ar);
-                        dr++;
+                        batchH += GroupHeight(groups[gi], rowHeights);
+                        AddGroup(batchIndices, groups[gi]);
+                        gi++;
                     }
 
                     current.Items.Add(new PlacedItem(
-                        new TableSlice(table, colWidths, rowHeights, batchIndices),
+                        new TableSlice(table, colWidths!, rowHeights, batchIndices),
                         tableX, currentItemsY + curY + topOffset, tableW, batchH));
                     curY += batchH + topOffset;
 
                     isFirstSlice = false;
 
-                    if (dr < dataCount)
+                    if (gi < groups.Count)
                         StartNewPage();
 
-                } while (dr < dataCount);
+                } while (gi < groups.Count);
             }
             else
             {

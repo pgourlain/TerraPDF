@@ -6,6 +6,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] - 2026-08-28
+
+A table-correctness release. Every fix below addresses a case that produced a
+valid PDF with visibly wrong geometry — cells drawn on top of one another, or
+rows running off the bottom of the page — rather than an error. No public API
+changed; documents that do not use table spans and do not overflow a page are
+byte-for-byte identical to 2.0.0.
+
+### Added
+- New sample: `16_table_spans_showcase.pdf` — a seven-page document covering
+  every fix below. Pages 1-2 demonstrate `columnSpan`, `rowSpan`, the two
+  together, and a spanned cell growing the rows it covers, each next to the
+  code that produced it. Pages 3-5 are a header-less ledger whose accounts are
+  joined by row spans, split across three pages to show the spans surviving the
+  breaks intact. Pages 6-7 are a table placed straight into the content slot
+  with no `Column` wrapper, paginating with its grouped two-column header
+  repeated on both pages.
+
+### Fixed (table column and row spans)
+- **`Cell(columnSpan:)` no longer overlaps the cell that follows it.** The row
+  cursor advanced by one column regardless of the span just placed, so in a
+  three-column table a `columnSpan: 2` cell followed by a normal cell put that
+  cell in column 2 — inside the span — and left column 3 empty. Cells are now
+  placed in the first column not already covered by an earlier cell.
+- **`Cell(rowSpan:)` now reserves its columns in the rows below it.** Each row
+  started its cursor at column 1 with no record of what the previous rows had
+  spanned, so the row after a `rowSpan: 2` cell drew its first cell at the same
+  origin, on top of the spanned cell.
+- **Spanned cells are measured and grow the rows they cover.** `GetRowHeights`
+  skipped every cell with `RowSpan > 1`, so a spanned cell contributed no height:
+  content taller than the rows it covered overflowed past the table, and a row
+  containing only spanned cells collapsed to zero height. Row heights are now
+  computed in two passes, the second distributing any shortfall evenly across
+  the rows a spanned cell covers.
+- Spans below `1` are treated as `1` rather than producing a zero-width or
+  zero-height cell.
+
+All three defects produced valid PDFs that silently drew cells on top of each
+other, and none of them were covered by the test suite. New
+`TableSpanTests` asserts on the rectangles actually emitted into the content
+stream — placement, width, height, and pairwise non-overlap — including a
+grouped header span repeated across a multi-page table.
+
+### Fixed (table pagination)
+- **A table with no header row now splits across pages.** Only tables declaring
+  a `HeaderRow` were split between rows; a header-less table taller than the
+  page was placed whole and its overflowing rows simply ran off the bottom.
+  Header-less tables are now split when — and only when — they cannot fit a
+  page, so a short one is still drawn as an ordinary item and the decorators
+  wrapped around it (background, border) keep painting.
+- **A table placed directly in the content slot now paginates.** The layout pass
+  looked for a top-level `Column` and sent anything else down a single-page
+  path, so `page.Content().Table(…)` overflowed instead of splitting. Such a
+  table is now wrapped in a synthetic one-item column and takes the same
+  row-splitting path. Content that fits on one page is unaffected and still
+  receives the whole content box.
+- **A row span is no longer cut in half at a page break.** The splitter moved one
+  row at a time, so a break landing inside a `rowSpan` left a truncated cell on
+  the first page with nothing continuing it overleaf. Data rows are now grouped
+  into the smallest runs that no row span crosses, and a group is never divided
+  between pages. A group taller than a whole page is still forced out so layout
+  always makes progress.
+
+`TablePaginationTests` covers each case, including the row-span break at seven
+different page offsets — the defect only appeared at offsets where the break
+happened to fall inside a spanned pair.
+
+### Known limitations
+- A row span that starts in a *header* row and extends into data rows renders
+  correctly on the first page, but is truncated to the header rows on every
+  continuation page: the header block repeats while the data rows it also
+  covers stay behind on the page before. Row spans that start in a data row are
+  unaffected — those are grouped and never split. Keep header rows
+  self-contained if a table is expected to paginate.
+
+---
+
 ## [2.0.0] - 2026-07-23
 
 ### Added (custom font embedding)
@@ -467,7 +544,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (GitHub Actions): build, test, coverage.
 - Publish workflow (GitHub Actions): NuGet + symbols on release tag.
 
-[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sahebansari/TerraPDF/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/sahebansari/TerraPDF/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/sahebansari/TerraPDF/compare/v1.4.0...v1.5.0
