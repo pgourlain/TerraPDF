@@ -205,6 +205,28 @@ internal sealed class PdfDocument
             pageImageMaps.Add(imgMap);
         }
 
+        // Constant-alpha ExtGState resources — deduplicated document-wide by
+        // opacity value, same pattern as images/fonts above: two shapes at the
+        // same opacity (even on different pages) share one /ExtGState object.
+        var extGStateObjectByOpacity = new Dictionary<double, int>();
+        var pageExtGStateMaps = new List<Dictionary<string, int>>();
+        foreach (var page in _pages)
+        {
+            var gsMap = new Dictionary<string, int>();
+            foreach (var (alias, opacity) in page.ExtGStateObjects)
+            {
+                if (!extGStateObjectByOpacity.TryGetValue(opacity, out int existingId))
+                {
+                    existingId = nextId++;
+                    extGStateObjectByOpacity[opacity] = existingId;
+                    string alphaStr = opacity.ToString("F4", CultureInfo.InvariantCulture);
+                    objects.Add((existingId, $"<< /Type /ExtGState /ca {alphaStr} /CA {alphaStr} >>"));
+                }
+                gsMap[alias] = existingId;
+            }
+            pageExtGStateMaps.Add(gsMap);
+        }
+
         // Custom (embedded) fonts — deduplicated document-wide by variant identity,
         // mirroring the image dedup above: a font is embedded once regardless of how
         // many pages (or how many times per page) it is used. Glyph usage is merged
@@ -225,23 +247,32 @@ internal sealed class PdfDocument
         var customFontObjectIds = new Dictionary<TrueType.CustomFontVariant, int>();
         foreach (var (variant, glyphs) in customGlyphUsageAll)
         {
-            // FontFile2: the whole original TrueType file, Flate-compressed.
-            // /Length1 is the required uncompressed byte length (PDF §9.9).
+            // FontFile2: the TrueType file with every glyph this document never
+            // shows blanked out of 'glyf' (see TrueTypeFont.Subsetting.cs — glyph
+            // IDs are never renumbered, so cmap/hmtx/GSUB/CIDToGIDMap all stay
+            // valid unchanged), Flate-compressed. /Length1 is the required
+            // uncompressed byte length (PDF §9.9) of what's actually embedded.
             int fontFileId = nextId++;
-            byte[] rawFont = variant.Font.RawData;
-            byte[] compressedFont = Compress(rawFont);
+            byte[] subsetFont = variant.Font.BuildSubsetRawData(glyphs.Keys.ToHashSet());
+            byte[] compressedFont = Compress(subsetFont);
             byte[] fontFileData = _encryption is not null
                 ? _encryption.EncryptBytes(compressedFont, fontFileId, 0)
                 : compressedFont;
             binaryObjects.Add((fontFileId,
-                $"<< /Length1 {rawFont.Length} /Filter /FlateDecode /Length {fontFileData.Length} >>",
+                $"<< /Length1 {subsetFont.Length} /Filter /FlateDecode /Length {fontFileData.Length} >>",
                 fontFileData));
+
+            // Subset tag (PDF §9.6.4): flags to any consumer that this FontFile2
+            // is not the full original font installed elsewhere under this name.
+            // Deterministic per variant, not random, so re-generating the same
+            // document produces the same bytes.
+            string subsetBaseFontName = $"{SubsetTag(variant.BaseFontName)}+{variant.BaseFontName}";
 
             // FontDescriptor
             int descriptorId = nextId++;
             var (xMin, yMin, xMax, yMax) = variant.Font.FontBBox;
             objects.Add((descriptorId,
-                $"<< /Type /FontDescriptor /FontName /{variant.BaseFontName} " +
+                $"<< /Type /FontDescriptor /FontName /{subsetBaseFontName} " +
                 $"/Flags {variant.DescriptorFlags} " +
                 $"/FontBBox [{Inv(xMin)} {Inv(yMin)} {Inv(xMax)} {Inv(yMax)}] " +
                 $"/ItalicAngle {Inv(variant.Font.ItalicAngle)} " +
@@ -251,13 +282,13 @@ internal sealed class PdfDocument
 
             // CIDFontType2 descendant — /W built only from glyph IDs actually used
             // anywhere in the document (CIDToGIDMap /Identity: the CID a content
-            // stream shows *is* the glyph index into the embedded font, because the
-            // whole font — not a renumbered subset — is embedded).
+            // stream shows *is* the glyph index into the embedded font, since glyph
+            // IDs are preserved as-is by the blanking-only subsetting above).
             int cidFontId = nextId++;
             string wArray = string.Join(" ", glyphs.Keys.OrderBy(g => g)
                 .Select(gid => $"{gid} [{Inv(variant.Font.GetAdvanceWidthInEm(gid))}]"));
             objects.Add((cidFontId,
-                $"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{variant.BaseFontName} " +
+                $"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{subsetBaseFontName} " +
                 $"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> " +
                 $"/FontDescriptor {descriptorId} 0 R /DW 1000 /W [{wArray}] /CIDToGIDMap /Identity >>"));
 
@@ -272,7 +303,7 @@ internal sealed class PdfDocument
             // Type0 composite font — the object actually referenced from /Resources /Font.
             int type0Id = nextId++;
             objects.Add((type0Id,
-                $"<< /Type /Font /Subtype /Type0 /BaseFont /{variant.BaseFontName} " +
+                $"<< /Type /Font /Subtype /Type0 /BaseFont /{subsetBaseFontName} " +
                 $"/Encoding /Identity-H /DescendantFonts [{cidFontId} 0 R] /ToUnicode {toUnicodeId} 0 R >>"));
 
             customFontObjectIds[variant] = type0Id;
@@ -373,6 +404,12 @@ internal sealed class PdfDocument
                   " >> "
                 : string.Empty;
 
+            string extGStateDict = pageExtGStateMaps[i].Count > 0
+                ? "/ExtGState << " +
+                  string.Join(" ", pageExtGStateMaps[i].Select(kv => $"/{kv.Key} {kv.Value} 0 R")) +
+                  " >> "
+                : string.Empty;
+
             // Custom-font entries this page actually uses, resolved to their
             // document-wide-deduplicated Type0 object — appended alongside the
             // (unchanged) standard-font resources every page already carries.
@@ -391,7 +428,7 @@ internal sealed class PdfDocument
                 $"/MediaBox [0 0 {Inv(p.Width)} {Inv(p.Height)}] " +
                 $"/Contents {contentIds[i]} 0 R " +
                 $"{annotStr}" +
-                $"/Resources << /Font << {fontResources}{customFontResources} >> {xObjectDict}>> >>"));
+                $"/Resources << /Font << {fontResources}{customFontResources} >> {xObjectDict}{extGStateDict}>> >>"));
         }
 
         // Outlines (bookmarks)
@@ -502,6 +539,29 @@ internal sealed class PdfDocument
             zlib.Flush();
             zlib.Dispose();
             return ms.ToArray();
+        }
+
+        /// <summary>
+        /// Deterministic 6-uppercase-letter PDF subset tag (§9.6.4) derived from
+        /// <paramref name="baseFontName"/> via FNV-1a — stable across runs (unlike
+        /// <see cref="string.GetHashCode()"/>, which is randomized per process), so
+        /// regenerating the same document produces byte-identical output.
+        /// </summary>
+        private static string SubsetTag(string baseFontName)
+        {
+            uint hash = 2166136261u;
+            foreach (byte b in Encoding.UTF8.GetBytes(baseFontName))
+            {
+                hash ^= b;
+                hash *= 16777619u;
+            }
+            var chars = new char[6];
+            for (int i = 0; i < 6; i++)
+            {
+                chars[i] = (char)('A' + (int)(hash % 26));
+                hash = hash * 2654435761u + 1;
+            }
+            return new string(chars);
         }
 
         /// <summary>

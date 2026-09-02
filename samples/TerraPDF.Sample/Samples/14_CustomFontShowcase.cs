@@ -60,7 +60,7 @@ internal static class CustomFontShowcase
                 {
                     f.Item().LineHorizontal(0.5, gridLine);
                     f.Item().PaddingTop(4).AlignCenter()
-                     .Text("TerraPDF — 2.0.0").FontSize(8).FontColor(muted);
+                     .Text("TerraPDF — 2.1.0").FontSize(8).FontColor(muted);
                 });
 
                 page.Content().PaddingTop(14).Column(col =>
@@ -78,9 +78,9 @@ internal static class CustomFontShowcase
                                    "TrueType variant, then uses it exactly like a built-in family via ")
                                 .FontColor(muted);
                             t.Span("TextStyle.FontFamily(\"Lato\")").Bold().FontColor(accent);
-                            t.Span(". The whole font file is embedded in the PDF (no subsetting yet), " +
-                                   "so it renders identically in any conforming viewer — no system " +
-                                   "font installation required.").FontColor(muted);
+                            t.Span(". Only the glyphs this document actually uses are embedded " +
+                                   "(automatic subsetting), so it renders identically in any conforming " +
+                                   "viewer — no system font installation required.").FontColor(muted);
                         });
                     });
 

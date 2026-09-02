@@ -13,7 +13,7 @@ string imgDir    = AppContext.BaseDirectory;          // images live next to the
 string headerImg = Path.Combine(imgDir, "header_logo.png");
 string smallImg  = Path.Combine(imgDir, "small_logo.jpg");
 
-Console.WriteLine("TerraPDF Samples - generating sixteen PDFs to Desktop...");
+Console.WriteLine("TerraPDF Samples - generating seventeen PDFs to Desktop...");
 Console.WriteLine();
 
 SimpleReport.Generate(Path.Combine(sampleDir, "01_simple_report.pdf"));
@@ -34,6 +34,8 @@ CustomFontShowcase.Generate(Path.Combine(sampleDir, "14_custom_font_showcase.pdf
 ChildNutritionIndiaReport.Generate(Path.Combine(sampleDir, "15_child_nutrition_india_report.pdf"),
     Path.Combine(imgDir, "Fonts", "NotoSansDevanagari-Regular.ttf"), Path.Combine(imgDir, "Fonts", "NotoSansDevanagari-Bold.ttf"));
 TableSpansShowcase.Generate(Path.Combine(sampleDir, "16_table_spans_showcase.pdf"));
+FontSubsettingShowcase.Generate(Path.Combine(sampleDir, "17_font_subsetting_showcase.pdf"),
+    Path.Combine(imgDir, "Fonts", "Lato-Regular.ttf"), Path.Combine(imgDir, "Fonts", "NotoSansDevanagari-Regular.ttf"));
 
 Console.WriteLine();
 Console.WriteLine("Done.");

@@ -1,28 +1,37 @@
-# TerraPDF — Free C# PDF Library for .NET
+# TerraPDF - Free C# PDF Library and PDF Generator for .NET
 
-**A free, open-source (MIT) C# PDF library for creating PDF documents in .NET** — generate invoices, reports, receipts, statements, labels, and certificates from C# code with a fluent API. 100% managed C#, zero dependencies, and free for personal **and commercial** use: no watermarks, no page limits, no paid tiers.
+**TerraPDF is a free, open-source (MIT) C# PDF library and PDF generator for .NET**. Create invoices, reports, receipts, statements, labels, certificates, and other PDF documents from C# with a fluent, composable API. It is 100% managed C#, has zero runtime dependencies, and is free for personal **and commercial** use: no watermarks, page limits, or paid tiers.
 
 ![TerraPDF](https://raw.githubusercontent.com/sahebansari/TerraPDF/master/logo.png)
 
 [![NuGet](https://img.shields.io/nuget/v/TerraPDF.svg)](https://www.nuget.org/packages/TerraPDF)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/TerraPDF.svg)](https://www.nuget.org/packages/TerraPDF)
+[![.NET 8, 9 and 10](https://img.shields.io/badge/.NET-8%20%7C%209%20%7C%2010-512BD4)](https://dotnet.microsoft.com/platform/support/policy/dotnet-core)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/sahebansari/TerraPDF/blob/master/LICENSE)
 
-📚 **To know more about it and documentation and sample codes. Please visit its website** 
-[https://terrapdf.com/](https://terrapdf.com/)
+[Website](https://terrapdf.com/) | [Documentation](https://github.com/sahebansari/TerraPDF/tree/master/docs) | [Samples](https://github.com/sahebansari/TerraPDF/tree/master/samples)
 
-
-> **New in 2.0.0:** Custom font embedding — `FontFamily.Register(...)` loads a TrueType font
+> **Highlights:** Custom font embedding — `FontFamily.Register(...)` loads a TrueType font
 (brand typefaces, or scripts beyond WinAnsiEncoding like Cyrillic and Greek) and uses it via the
 same `TextStyle.FontFamily(...)` API as the built-in families — including automatic, pure-C#
 Devanagari-aware rendering (conjunct ligatures, reph, and below-base 'ra' forms, no native
-shaping engine). See [Custom Fonts](docs/custom-fonts.md).
+shaping engine) and automatic glyph subsetting, so only the glyphs a document actually uses are
+embedded. See [Custom Fonts](https://github.com/sahebansari/TerraPDF/blob/master/docs/custom-fonts.md).
 >
-> Also: Code128 barcodes and QR codes (ISO/IEC 18004, versions 1-40, all four error correction levels) via `container.Barcode(...)` and `container.QrCode(...)` — rendered as vector-filled rectangles, no raster image pipeline, placeable anywhere a `Column`, `Row`, or `Table` cell can go. TerraPDF also multi-targets **.NET 10 (LTS)** alongside .NET 8 and 9.
+> Also: Code128 barcodes and QR codes (ISO/IEC 18004, versions 1-40, all four error correction levels) via `container.Barcode(...)` and `container.QrCode(...)` — rendered as vector-filled rectangles, no raster image pipeline, placeable anywhere a `Column`, `Row`, or `Table` cell can go. The vector canvas (`container.Canvas(...)`) can now place text labels and draw with constant-alpha transparency. TerraPDF also multi-targets **.NET 10 (LTS)** alongside .NET 8 and 9.
 
-**TerraPDF** is a lightweight, zero-dependency, pure C# library for generating professional PDF 1.7 documents programmatically.
-It provides a fluent, composable API that covers the full document-authoring lifecycle — from page layout and
-rich text to tables, images, hyperlinks, and multi-page pagination — with no native binaries, no third-party
-runtime packages, and no licensing restrictions.
+TerraPDF is a lightweight, zero-dependency, pure C# PDF 1.7 writer for programmatic document generation.
+Its fluent API covers the full document-authoring lifecycle: page layout, rich text, tables, images,
+hyperlinks, bookmarks, encryption, and multi-page pagination. There are no native binaries or third-party
+runtime packages.
+
+## At a glance
+
+- **Package:** [`TerraPDF`](https://www.nuget.org/packages/TerraPDF)
+- **Targets:** .NET 8, .NET 9, and .NET 10
+- **License:** MIT, including commercial use
+- **Runtime:** 100% managed C# with zero runtime dependencies
+- **Output:** PDF 1.7 documents generated directly from code
 
 ---
 
@@ -60,24 +69,25 @@ runtime packages, and no licensing restrictions.
 - Column, Row, and Table layouts — with column- and row-spanning table cells
 - PNG and JPEG image embedding
 - Horizontal and vertical rule lines
- - Explicit page breaks via `PageBreak()`
- - Clickable hyperlink (URI) annotations via `Hyperlink()`
- - Internal document links (GoTo) via `InternalLink()`
- - Automatic Table of Contents generation from H1–H6 headings
- - PDF bookmarks / outlines with hierarchical nesting
- - Document metadata (Title, Author, Subject, Keywords, Creator)
- - Conditional rendering via `ShowIf`
- - Reusable components via `IComponent`
- - Headers, footers, and page numbers
- - **AES-256 PDF encryption by default** — user password, owner password, and fine-grained permission flags (`PdfPermissions`) via `container.Encrypt()`; AES-128 remains available for compatibility
+- Explicit page breaks via `PageBreak()`
+- Clickable hyperlink (URI) annotations via `Hyperlink()`
+- Internal document links (GoTo) via `InternalLink()`
+- Automatic Table of Contents generation from H1-H6 headings
+- PDF bookmarks / outlines with hierarchical nesting
+- Document metadata (Title, Author, Subject, Keywords, Creator)
+- Conditional rendering via `ShowIf`
+- Reusable components via `IComponent`
+- Headers, footers, and page numbers
+- **AES-256 PDF encryption by default** - user password, owner password, and fine-grained permission flags (`PdfPermissions`) via `container.Encrypt()`; AES-128 remains available for compatibility
 - **Images from bytes and streams** — `Image(byte[])` / `Image(Stream)` with transparency and deduplication
 - **Anchor-based bookmarks** — bookmark content directly to rendered elements and keep destinations accurate
- - Full **WinAnsiEncoding** character coverage
- - **Vector graphics canvas** — lines, rectangles, rounded rectangles, circles, ellipses, arbitrary Bézier paths, polygons, and grid helpers via `container.Canvas()`
- - **Code128 barcodes** — `container.Barcode(...)`, with optional human-readable caption, custom colours, and quiet zone
- - **QR codes** — `container.QrCode(...)`, full ISO/IEC 18004 generator (versions 1-40, error correction levels L/M/Q/H), rendered as vector rectangles
- - **Custom font embedding** — `FontFamily.Register(...)` embeds a TrueType font (brand typefaces, Cyrillic, Greek, and beyond WinAnsiEncoding) used via the same `FontFamily()` API as the built-in families
- - Fluent, composable API
+- Full **WinAnsiEncoding** character coverage
+- **Vector graphics canvas** - lines, rectangles, rounded rectangles, circles, ellipses, arbitrary Bezier paths, polygons, text labels, and grid helpers via `container.Canvas()`
+- **Constant-alpha transparency** - translucent fills, strokes, and text on the vector canvas via `/ExtGState`, with `opacity` on every canvas primitive
+- **Code128 barcodes** - `container.Barcode(...)`, with optional human-readable caption, custom colours, and quiet zone
+- **QR codes** - `container.QrCode(...)`, full ISO/IEC 18004 generator (versions 1-40, error correction levels L/M/Q/H), rendered as vector rectangles
+- **Custom font embedding with automatic subsetting** - `FontFamily.Register(...)` embeds a TrueType font (brand typefaces, Cyrillic, Greek, and beyond WinAnsiEncoding) used via the same `FontFamily()` API as the built-in families, embedding only the glyphs each document actually uses
+- Fluent, composable API
 
 ---
 
@@ -151,7 +161,7 @@ For complete API reference and detailed guides, visit the [docs](https://github.
 - **[Colors](https://github.com/sahebansari/TerraPDF/blob/master/docs/colors.md)** — Material Design color palette with shades
 - **[Encryption & Security](https://github.com/sahebansari/TerraPDF/blob/master/docs/encryption.md)** — AES-256 by default, with AES-128 compatibility mode and permission flags
 - **[Custom Fonts](https://github.com/sahebansari/TerraPDF/blob/master/docs/custom-fonts.md)** — embed TrueType fonts for brand typefaces and full Unicode (Cyrillic, Greek, and beyond)
-- **[Vector Graphics](https://github.com/sahebansari/TerraPDF/blob/master/docs/vector-graphics.md)** — Canvas API, shapes, paths, grids, and charts
+- **[Vector Graphics](https://github.com/sahebansari/TerraPDF/blob/master/docs/vector-graphics.md)** — Canvas API, shapes, paths, text labels, transparency, grids, and charts
 - **[Table of Contents](https://github.com/sahebansari/TerraPDF/blob/master/docs/table-of-contents.md)** — Automatic TOC generation from headings
 - **[Bookmarks](https://github.com/sahebansari/TerraPDF/blob/master/docs/bookmarks.md)** — PDF bookmarks and outlines
 - **[Components & Templates](https://github.com/sahebansari/TerraPDF/blob/master/docs/components-and-templates.md)** — Reusable components and document templates

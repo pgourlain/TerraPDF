@@ -1,4 +1,5 @@
 using TerraPDF.Core;
+using TerraPDF.Drawing;
 using TerraPDF.Helpers;
 
 namespace TerraPDF.Elements;
@@ -45,7 +46,7 @@ internal sealed class CanvasElement : Element
                     ctx.Page.AddLine(
                         ctx.X + lc.X1, ctx.Y + lc.Y1,
                         ctx.X + lc.X2, ctx.Y + lc.Y2,
-                        PdfColor.FromHex(lc.HexColor), lc.LineWidth);
+                        PdfColor.FromHex(lc.HexColor), lc.LineWidth, lc.Opacity);
                     break;
 
                 case VectorCanvas.DrawRectCmd rc:
@@ -63,6 +64,10 @@ internal sealed class CanvasElement : Element
                 case VectorCanvas.DrawPathCmd pc:
                     DrawPath(ctx, pc.Path);
                     break;
+
+                case VectorCanvas.DrawTextCmd tc:
+                    DrawText(ctx, tc);
+                    break;
             }
         }
     }
@@ -76,11 +81,11 @@ internal sealed class CanvasElement : Element
 
         if (rc.FillHex is not null && rc.StrokeHex is not null)
             ctx.Page.AddRect(ax, ay, rc.W, rc.H,
-                PdfColor.FromHex(rc.FillHex), PdfColor.FromHex(rc.StrokeHex), rc.LineWidth);
+                PdfColor.FromHex(rc.FillHex), PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity);
         else if (rc.FillHex is not null)
-            ctx.Page.AddFilledRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.FillHex));
+            ctx.Page.AddFilledRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.FillHex), rc.Opacity);
         else if (rc.StrokeHex is not null)
-            ctx.Page.AddStrokedRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.StrokeHex), rc.LineWidth);
+            ctx.Page.AddStrokedRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity);
     }
 
     private static void DrawRoundedRect(DrawingContext ctx, VectorCanvas.DrawRoundedRectCmd rr)
@@ -90,13 +95,13 @@ internal sealed class CanvasElement : Element
 
         if (rr.FillHex is not null && rr.StrokeHex is not null)
             ctx.Page.AddFilledAndStrokedRoundedRect(ax, ay, rr.W, rr.H, rr.Radius,
-                PdfColor.FromHex(rr.FillHex), PdfColor.FromHex(rr.StrokeHex), rr.LineWidth);
+                PdfColor.FromHex(rr.FillHex), PdfColor.FromHex(rr.StrokeHex), rr.LineWidth, rr.Opacity);
         else if (rr.FillHex is not null)
             ctx.Page.AddFilledRoundedRect(ax, ay, rr.W, rr.H, rr.Radius,
-                PdfColor.FromHex(rr.FillHex));
+                PdfColor.FromHex(rr.FillHex), rr.Opacity);
         else if (rr.StrokeHex is not null)
             ctx.Page.AddRoundedRect(ax, ay, rr.W, rr.H, rr.Radius,
-                PdfColor.FromHex(rr.StrokeHex), rr.LineWidth);
+                PdfColor.FromHex(rr.StrokeHex), rr.LineWidth, rr.Opacity);
     }
 
     private static void DrawEllipse(DrawingContext ctx, VectorCanvas.DrawEllipseCmd ec)
@@ -107,23 +112,24 @@ internal sealed class CanvasElement : Element
 
         if (ec.FillHex is not null && ec.StrokeHex is not null)
             ctx.Page.AddFilledAndStrokedEllipse(cx, cy, ec.Rx, ec.Ry,
-                PdfColor.FromHex(ec.FillHex), PdfColor.FromHex(ec.StrokeHex), ec.LineWidth);
+                PdfColor.FromHex(ec.FillHex), PdfColor.FromHex(ec.StrokeHex), ec.LineWidth, ec.Opacity);
         else if (ec.FillHex is not null)
-            ctx.Page.AddFilledEllipse(cx, cy, ec.Rx, ec.Ry, PdfColor.FromHex(ec.FillHex));
+            ctx.Page.AddFilledEllipse(cx, cy, ec.Rx, ec.Ry, PdfColor.FromHex(ec.FillHex), ec.Opacity);
         else if (ec.StrokeHex is not null)
             ctx.Page.AddStrokedEllipse(cx, cy, ec.Rx, ec.Ry,
-                PdfColor.FromHex(ec.StrokeHex), ec.LineWidth);
+                PdfColor.FromHex(ec.StrokeHex), ec.LineWidth, ec.Opacity);
     }
 
     private static void DrawPath(DrawingContext ctx, PathDescriptor pd)
     {
         if (pd.Commands.Count == 0) return;
 
-        ctx.Page.BeginPath(
+        bool opacityScope = ctx.Page.BeginPath(
             pd.FillColor,
             pd.StrokeColor,
             pd.LineWidth,
-            pd.EvenOddFill);
+            pd.EvenOddFill,
+            pd.PaintOpacity);
 
         foreach (var cmd in pd.Commands)
         {
@@ -147,6 +153,21 @@ internal sealed class CanvasElement : Element
             }
         }
 
-        ctx.Page.EndPath(pd.FillColor, pd.StrokeColor, pd.EvenOddFill);
+        ctx.Page.EndPath(pd.FillColor, pd.StrokeColor, pd.EvenOddFill, opacityScope);
+    }
+
+    private static void DrawText(DrawingContext ctx, VectorCanvas.DrawTextCmd tc)
+    {
+        var font = PdfFonts.ResolveFont(tc.FontFamily, tc.Bold, tc.Italic);
+        var color = PdfColor.FromHex(tc.HexColor);
+
+        bool opacityScope = ctx.Page.BeginOpacityScope(tc.Opacity);
+        ctx.Page.BeginTextObject();
+        if (font.IsCustom)
+            ctx.Page.ShowTextAtCustomFont(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.Custom!);
+        else
+            ctx.Page.ShowTextAt(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.StandardFamily, tc.Bold, tc.Italic);
+        ctx.Page.EndTextObject();
+        ctx.Page.EndOpacityScope(opacityScope);
     }
 }

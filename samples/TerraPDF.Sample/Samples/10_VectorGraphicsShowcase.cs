@@ -122,16 +122,16 @@ internal static class VectorGraphicsShowcase
                        .Canvas(80, c =>
                        {
                            // Circles
-                           c.FillCircle(40,  40, 36, brandLight);
-                           c.StrokeCircle(120, 40, 36, accent, 2);
-                           c.DrawCircle(200, 40, 36, Color.Indigo.Lighten5, brand, 1.5);
+                           c.FillCircle(38,  40, 34, brandLight);
+                           c.StrokeCircle(116, 40, 34, accent, 2);
+                           c.DrawCircle(194, 40, 34, Color.Indigo.Lighten5, brand, 1.5);
                            // Ellipses
-                           c.FillEllipse(310, 40, 60, 30, Color.Green.Medium);
-                           c.StrokeEllipse(410, 40, 30, 38, Color.Purple.Medium, 2);
+                           c.FillEllipse(284, 40, 48, 26, Color.Green.Medium);
+                           c.StrokeEllipse(364, 40, 24, 30, Color.Purple.Medium, 2);
                            // Concentric circles
-                           c.FillCircle(490,  40, 38, Color.Blue.Lighten4);
-                           c.FillCircle(490,  40, 26, Color.Blue.Lighten2);
-                           c.FillCircle(490,  40, 14, Color.Blue.Medium);
+                           c.FillCircle(420,  40, 26, Color.Blue.Lighten4);
+                           c.FillCircle(420,  40, 18, Color.Blue.Lighten2);
+                           c.FillCircle(420,  40, 9,  Color.Blue.Medium);
                        });
                     Caption(col.Item(), "Circles: filled · stroked · filled+stroked  |  Ellipses: filled · stroked  |  Concentric");
                 });
@@ -191,31 +191,31 @@ internal static class VectorGraphicsShowcase
                            // Smooth S-curve
                            c.Path(p => p
                                .MoveTo(0, 80)
-                               .CurveTo(40, 80, 60, 0, 100, 0)
+                               .CurveTo(38, 80, 57, 0, 95, 0)
                                .Stroke(brandLight, 2));
 
                            // Closed petal / leaf shape
                            c.Path(p => p
-                               .MoveTo(160, 50)
-                               .CurveTo(160, 10, 220, 10, 220, 50)
-                               .CurveTo(220, 90, 160, 90, 160, 50)
+                               .MoveTo(115, 50)
+                               .CurveTo(115, 10, 175, 10, 175, 50)
+                               .CurveTo(175, 90, 115, 90, 115, 50)
                                .Close()
                                .Fill(Color.Green.Lighten3)
                                .Stroke(Color.Green.Darken2, 1.5));
 
                            // Wave shape
                            c.Path(p => p
-                               .MoveTo(250, 50)
-                               .CurveTo(270, 10, 290, 10, 310, 50)
-                               .CurveTo(330, 90, 350, 90, 370, 50)
-                               .CurveTo(390, 10, 410, 10, 430, 50)
+                               .MoveTo(195, 50)
+                               .CurveTo(210, 10, 225, 10, 240, 50)
+                               .CurveTo(255, 90, 270, 90, 285, 50)
+                               .CurveTo(300, 10, 315, 10, 330, 50)
                                .Stroke(accent, 2.5));
 
                            // Drop / teardrop
                            c.Path(p => p
-                               .MoveTo(490, 10)
-                               .CurveTo(530, 10, 530, 70, 490, 90)
-                               .CurveTo(450, 70, 450, 10, 490, 10)
+                               .MoveTo(390, 10)
+                               .CurveTo(430, 10, 430, 70, 390, 90)
+                               .CurveTo(350, 70, 350, 10, 390, 10)
                                .Close()
                                .Fill(Color.Blue.Lighten3)
                                .Stroke(brand, 1.5));
@@ -234,24 +234,24 @@ internal static class VectorGraphicsShowcase
 
                            // Triangle
                            c.Path(p => p
-                               .Polygon((180, 90), (230, 10), (280, 90))
+                               .Polygon((140, 90), (190, 10), (240, 90))
                                .Fill("#FFE0B2")
                                .Stroke(accent, 1.5));
 
                            // Pentagon
                            c.Path(p => p
                                .Polygon(
-                                   (370, 10), (420, 46), (401, 90),
-                                   (339, 90), (320, 46))
+                                   (305, 10), (355, 46), (336, 90),
+                                   (274, 90), (255, 46))
                                .Fill(Color.Indigo.Lighten5)
                                .Stroke(brand, 1.5));
 
                            // Star (two interlocked triangles)
                            c.Path(p => p
-                               .Polygon((490, 10), (503, 46), (540, 46),
-                                        (510, 68), (521, 100), (490, 80),
-                                        (459, 100), (470, 68), (440, 46),
-                                        (477, 46))
+                               .Polygon((415, 24), (424, 49), (450, 49),
+                                        (429, 64), (437, 87), (415, 73),
+                                        (393, 87), (401, 64), (380, 49),
+                                        (406, 49))
                                .Fill(accent)
                                .Stroke(Color.Orange.Darken2, 1));
                        });
@@ -288,8 +288,8 @@ internal static class VectorGraphicsShowcase
 
                            // Diamond ring
                            c.Path(p => p
-                               .Polygon((440, 10), (490, 50), (440, 90), (390, 50))  // outer diamond
-                               .Polygon((440, 28), (472, 50), (440, 72), (408, 50))  // inner diamond
+                               .Polygon((400, 16), (443, 50), (400, 84), (357, 50))  // outer diamond
+                               .Polygon((400, 31), (427, 50), (400, 69), (373, 50))  // inner diamond
                                .Fill(Color.Purple.Medium)
                                .UseEvenOddFill());
                        });
@@ -373,7 +373,7 @@ internal static class VectorGraphicsShowcase
                     col.Item().Background(panelBg).Border(0.5, grid).Padding(14)
                        .Canvas(160, c =>
                        {
-                           const double chartW  = 420;
+                           const double chartW  = 400;
                            const double chartH  = 130;
                            const double originX = 40;
                            const double originY = 130;
@@ -406,6 +406,11 @@ internal static class VectorGraphicsShowcase
                                c.FillRect(bx, by, barW * 0.35, bh, brand);
                                // Bar top accent
                                c.FillRect(bx, by, barW, 3, accent);
+
+                               // Value label above the bar (VectorCanvas.Text + MeasureTextWidth to centre it)
+                               string valueLabel = barData[i].Value.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+                               double labelW = VectorCanvas.MeasureTextWidth(valueLabel, 9, bold: true);
+                               c.Text(valueLabel, bx + (barW - labelW) / 2, by - 6, brand, 9, bold: true);
                            }
 
                            // Value tick marks on Y axis
@@ -427,7 +432,7 @@ internal static class VectorGraphicsShowcase
                     col.Item().Background(panelBg).Border(0.5, grid).Padding(14)
                        .Canvas(160, c =>
                        {
-                           const double chartW  = 440;
+                           const double chartW  = 410;
                            const double chartH  = 130;
                            const double originX = 20;
                            const double originY = 130;
@@ -552,31 +557,18 @@ internal static class VectorGraphicsShowcase
                            c.FillCircle(cx, cy, inner - 4, white);
                            c.StrokeCircle(cx, cy, inner - 4, grid, 0.5);
 
-                           // Legend boxes (right of donut)
+                           // Legend (right of donut): swatch + label drawn together on the
+                           // canvas itself via VectorCanvas.Text, so there's exactly one
+                           // legend — not a swatch-only column here plus a second, separately
+                           // laid out text list below it.
                            for (int i = 0; i < donutLabels.Length; i++)
                            {
                                double ly = 20 + i * 28;
                                c.FillRoundedRect(185, ly, 16, 16, 3, donutColors[i]);
                                c.StrokeRoundedRect(185, ly, 16, 16, 3, white, 0.5);
+                               c.Text($"{donutLabels[i]}  {donutData[i]:0}%", 209, ly + 12, brand, 10);
                            }
                        });
-                    // Legend text
-                    col.Item().PaddingLeft(200).Column(legend =>
-                    {
-                        legend.Spacing(4);
-                        for (int i = 0; i < donutLabels.Length; i++)
-                        {
-                            int idx = i;
-                            legend.Item().Row(r =>
-                            {
-                                r.ConstantItem(20).Canvas(12, lc =>
-                                    lc.FillRoundedRect(0, 0, 14, 12, 2, donutColors[idx]));
-                                r.AutoItem().PaddingLeft(4)
-                                 .Text($"{donutLabels[idx]}  {donutData[idx]:0}%")
-                                 .FontSize(9).FontColor(brand);
-                            });
-                        }
-                    });
                     Caption(col.Item(), "Donut chart — Bézier arc slices with inner hole via lineTo + reverse arc");
                 });
 

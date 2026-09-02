@@ -7,10 +7,14 @@ namespace TerraPDF.Drawing.TrueType;
 /// <c>.otf</c> that still carries a <c>glyf</c>/<c>loca</c> table) to embed it in a
 /// PDF as a <c>CIDFontType2</c> composite font and measure text set in it.
 /// <para>
-/// No glyph-outline interpretation is performed — the whole file is embedded
-/// verbatim (<see cref="RawData"/>), so only the tables needed for character-to-glyph
-/// mapping, advance widths, and descriptor metrics are read: <c>head</c>, <c>maxp</c>,
-/// <c>hhea</c>/<c>hmtx</c>, <c>cmap</c>, and (optionally) <c>OS/2</c>/<c>post</c>.
+/// Glyph-outline data itself is never interpreted, only relocated — only the
+/// tables needed for character-to-glyph mapping, advance widths, and descriptor
+/// metrics are actually read: <c>head</c>, <c>maxp</c>, <c>hhea</c>/<c>hmtx</c>,
+/// <c>cmap</c>, and (optionally) <c>OS/2</c>/<c>post</c>. <see cref="RawData"/>
+/// keeps the original file untouched; what's actually embedded per document is
+/// <see cref="BuildSubsetRawData"/>'s output (see <c>TrueTypeFont.Subsetting.cs</c>) —
+/// the same font with every glyph that document doesn't show blanked out of
+/// <c>glyf</c>, glyph IDs never renumbered.
 /// </para>
 /// <para>
 /// CFF-flavoured OpenType (<c>OTTO</c>) and TrueType Collections (<c>ttcf</c>) are
@@ -21,7 +25,7 @@ namespace TerraPDF.Drawing.TrueType;
 /// </summary>
 internal sealed partial class TrueTypeFont
 {
-    /// <summary>The original, unmodified font file bytes — embedded as-is (no subsetting).</summary>
+    /// <summary>The original, unmodified font file bytes, as registered. Never itself embedded directly — see <see cref="BuildSubsetRawData"/>.</summary>
     internal byte[] RawData { get; }
 
     /// <summary>Design units per em (typically 1000 or 2048), from the <c>head</c> table.</summary>
@@ -45,6 +49,12 @@ internal sealed partial class TrueTypeFont
     /// <summary>Font bounding box [xMin, yMin, xMax, yMax] in 1000-unit glyph space.</summary>
     internal (double XMin, double YMin, double XMax, double YMax) FontBBox { get; }
 
+    /// <summary>sfnt table directory (tag -&gt; offset/length into <see cref="RawData"/>), as parsed by <see cref="Parse"/>. Used by <c>TrueTypeFont.Subsetting.cs</c>.</summary>
+    private readonly Dictionary<string, (uint Offset, uint Length)> _tables;
+
+    /// <summary><c>head.indexToLocFormat</c>: 0 if <c>loca</c> stores 16-bit (halved) offsets, 1 if 32-bit offsets.</summary>
+    private readonly short _indexToLocFormat;
+
     private readonly ushort[] _advanceWidths; // per glyph ID, in font design units
     private readonly List<(uint Start, uint End, uint StartGlyphId)> _cmapRanges; // sorted by Start, non-overlapping
 
@@ -60,7 +70,8 @@ internal sealed partial class TrueTypeFont
         double ascent, double descent, double capHeight, double italicAngle,
         (double, double, double, double) fontBBox,
         ushort[] advanceWidths, List<(uint, uint, uint)> cmapRanges,
-        Dictionary<ushort, List<(ushort[], ushort)>> devanagariLigatures)
+        Dictionary<ushort, List<(ushort[], ushort)>> devanagariLigatures,
+        Dictionary<string, (uint Offset, uint Length)> tables, short indexToLocFormat)
     {
         RawData         = rawData;
         UnitsPerEm      = unitsPerEm;
@@ -73,6 +84,8 @@ internal sealed partial class TrueTypeFont
         _advanceWidths  = advanceWidths;
         _cmapRanges     = cmapRanges;
         _devanagariLigatures = devanagariLigatures;
+        _tables             = tables;
+        _indexToLocFormat   = indexToLocFormat;
     }
 
     /// <summary>
@@ -193,6 +206,7 @@ internal sealed partial class TrueTypeFont
         short yMin = ReadI16(data, (int)head.Offset + 38);
         short xMax = ReadI16(data, (int)head.Offset + 40);
         short yMax = ReadI16(data, (int)head.Offset + 42);
+        short indexToLocFormat = ReadI16(data, (int)head.Offset + 50);
         double scale = 1000.0 / unitsPerEm;
         var fontBBox = (xMin * scale, yMin * scale, xMax * scale, yMax * scale);
 
@@ -265,7 +279,8 @@ internal sealed partial class TrueTypeFont
         var devanagariLigatures = ParseDevanagariLigatures(data, tables);
 
         return new TrueTypeFont(data, unitsPerEm, numGlyphs, ascent, descent, capHeight,
-            italicAngle, fontBBox, advanceWidths, cmapRanges, devanagariLigatures);
+            italicAngle, fontBBox, advanceWidths, cmapRanges, devanagariLigatures,
+            tables, indexToLocFormat);
     }
 
     /// <summary>

@@ -14,44 +14,43 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
-     <!-- ── NuGet package identity ───────────────────────────────────────── -->
-     <PackageId>TerraPDF</PackageId>
-      <Version>2.0.1</Version>
-      <Authors>Saheb Ansari</Authors>
-      <Copyright>Copyright © 2025-2026 TerraPDF Contributors</Copyright>
-      <PackageProjectUrl>https://github.com/sahebansari/TerraPDF</PackageProjectUrl>
-     <Description>
-       A free, open-source (MIT) C# PDF library for .NET — generate PDF documents
-       (invoices, reports, receipts, labels, certificates) from code with a fluent,
-       composable API. Lightweight, zero-dependency, and pure managed C#: no native
-       binaries, no HTML-to-PDF browser engine, free for commercial use. Features
-       include rich text styling (bold, italic, underline, strikethrough, custom
-       line-height), multi-span mixed formatting, Column / Row / Table layouts,
-       PNG and JPEG image embedding, rounded and per-edge borders, explicit page
-       breaks, clickable hyperlink annotations, headers, footers, page numbers,
-       AES-256 encryption, Code128 barcodes, QR codes (ISO/IEC 18004), custom
-       TrueType font embedding with full Unicode support, and a full Material
-       Design colour palette. Runs on Windows, Linux, macOS, Docker,
-       Azure, and AWS on .NET 8, 9, and 10.
-     </Description>
-     <PackageTags>pdf;pdf-generation;pdf-library;create-pdf;generate-pdf;pdf-writer;pdf-creator;free;open-source;mit;document;reporting;report;fluent-api;invoice;invoice-generator;table;image;barcode;qrcode;qr-code;code128;encryption;aes-256;no-dependency;zero-dependency;cross-platform;linux;docker;aspnetcore;dotnet;csharp;custom-fonts;truetype;font-embedding;unicode</PackageTags>
-     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-     <PackageReadmeFile>README.md</PackageReadmeFile>
-     <PackageReleaseNotes>https://github.com/sahebansari/TerraPDF/blob/master/CHANGELOG.md</PackageReleaseNotes>
+    <!-- NuGet package identity and discoverability -->
+    <PackageId>TerraPDF</PackageId>
+    <Version>2.1.0</Version>
+    <Authors>Saheb Ansari</Authors>
+    <Copyright>Copyright © 2025-2026 TerraPDF Contributors</Copyright>
+    <Title>TerraPDF - Free C# PDF Library for .NET</Title>
+    <Description>
+      TerraPDF is a free, open-source (MIT) C# PDF library for .NET. Generate PDF
+      documents such as invoices, reports, receipts, labels, certificates, and
+      statements from code with a fluent, composable API. Lightweight, zero-dependency,
+      and pure managed C#: no native binaries and no HTML-to-PDF browser engine.
+      Features include rich text styling, multi-span formatting, Column / Row / Table
+      layouts, PNG and JPEG images, borders, page breaks, hyperlinks, headers, footers,
+      page numbers, AES-256 encryption, Code128 barcodes, QR codes, custom TrueType
+      font embedding with automatic subsetting, vector graphics with text labels and
+      constant-alpha transparency, full Unicode support, and cross-platform .NET 8, 9,
+      and 10 support.
+    </Description>
+    <PackageTags>pdf;pdf-generation;pdf-library;pdf-document-generator;pdf-reporting;dotnet-pdf;create-pdf;generate-pdf;pdf-writer;pdf-creator;free;open-source;mit;document;reporting;report;fluent-api;invoice;invoice-generator;receipt;statement;table;image;barcode;qrcode;qr-code;code128;encryption;aes-256;no-dependency;zero-dependency;cross-platform;windows;linux;macos;docker;aspnetcore;dotnet;csharp;custom-fonts;truetype;font-embedding;font-subsetting;unicode;vector-graphics;transparency;net8;net9;net10</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageProjectUrl>https://github.com/sahebansari/TerraPDF</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>Version 2.1.0 adds automatic font subsetting, constant-alpha transparency (/ExtGState) for the vector canvas, and text labels on the vector canvas. Full changelog: https://github.com/sahebansari/TerraPDF/blob/master/CHANGELOG.md</PackageReleaseNotes>
 
      <!-- ── Source Link / reproducible build ────────────────────────────── -->
-     <RepositoryUrl>https://github.com/sahebansari/TerraPDF</RepositoryUrl>
-     <RepositoryType>git</RepositoryType>
-     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-     <IncludeSymbols>true</IncludeSymbols>
-     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-      <Title>TerraPDF — Free C# PDF Library for .NET (PDF Generation)</Title>
-      <PackageIcon>icon.png</PackageIcon>
-       <AssemblyVersion>2.0.1</AssemblyVersion>
-       <FileVersion>2.0.1</FileVersion>
+    <RepositoryUrl>https://github.com/sahebansari/TerraPDF</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>master</RepositoryBranch>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageIcon>icon.png</PackageIcon>
+    <AssemblyVersion>2.1.0</AssemblyVersion>
+    <FileVersion>2.1.0</FileVersion>
   </PropertyGroup>
 
   <!-- Bundle the README into the NuGet package -->

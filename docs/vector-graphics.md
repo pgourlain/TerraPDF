@@ -2,8 +2,8 @@
 
 TerraPDF provides a fluent **Canvas API** for drawing vector graphics directly inside
 any layout container. You can render lines, rectangles, circles, ellipses, rounded
-rectangles, arbitrary Bézier paths, polygons, and grids — all without any external
-dependencies.
+rectangles, arbitrary Bézier paths, polygons, text labels, and grids — all without
+any external dependencies.
 
 ---
 
@@ -52,7 +52,7 @@ Every method returns `this` so calls can be chained.
 ### Lines
 
 ```csharp
-canvas.Line(x1, y1, x2, y2, hexColor = "#000000", lineWidth = 1);
+canvas.Line(x1, y1, x2, y2, hexColor = "#000000", lineWidth = 1, opacity = 1);
 ```
 
 Draws a straight line from `(x1, y1)` to `(x2, y2)`.
@@ -70,14 +70,14 @@ Three variants give you fill-only, stroke-only, or both:
 
 ```csharp
 // Filled rectangle
-canvas.FillRect(x, y, width, height, hexColor = "#000000");
+canvas.FillRect(x, y, width, height, hexColor = "#000000", opacity = 1);
 
 // Stroked (outline) rectangle
-canvas.StrokeRect(x, y, width, height, hexColor = "#000000", lineWidth = 1);
+canvas.StrokeRect(x, y, width, height, hexColor = "#000000", lineWidth = 1, opacity = 1);
 
 // Filled + stroked rectangle
 canvas.DrawRect(x, y, width, height,
-    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1);
+    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1, opacity = 1);
 ```
 
 ```csharp
@@ -94,10 +94,10 @@ Identical variants to the rectangle API, but with a `radius` parameter for
 the corner curve:
 
 ```csharp
-canvas.FillRoundedRect  (x, y, w, h, radius, hexColor = "#000000");
-canvas.StrokeRoundedRect(x, y, w, h, radius, hexColor = "#000000", lineWidth = 1);
+canvas.FillRoundedRect  (x, y, w, h, radius, hexColor = "#000000", opacity = 1);
+canvas.StrokeRoundedRect(x, y, w, h, radius, hexColor = "#000000", lineWidth = 1, opacity = 1);
 canvas.DrawRoundedRect  (x, y, w, h, radius,
-    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1);
+    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1, opacity = 1);
 ```
 
 ```csharp
@@ -111,10 +111,10 @@ c.DrawRoundedRect  (220, 10, 90, 30, 15, "#FFF", "#1A3C5E", 1); // pill
 ### Circles
 
 ```csharp
-canvas.FillCircle  (cx, cy, radius, hexColor = "#000000");
-canvas.StrokeCircle(cx, cy, radius, hexColor = "#000000", lineWidth = 1);
+canvas.FillCircle  (cx, cy, radius, hexColor = "#000000", opacity = 1);
+canvas.StrokeCircle(cx, cy, radius, hexColor = "#000000", lineWidth = 1, opacity = 1);
 canvas.DrawCircle  (cx, cy, radius,
-    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1);
+    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1, opacity = 1);
 ```
 
 `(cx, cy)` is the centre of the circle.
@@ -133,14 +133,49 @@ Same variants as circles, but with independent horizontal (`rx`) and vertical
 (`ry`) radii:
 
 ```csharp
-canvas.FillEllipse  (cx, cy, rx, ry, hexColor = "#000000");
-canvas.StrokeEllipse(cx, cy, rx, ry, hexColor = "#000000", lineWidth = 1);
+canvas.FillEllipse  (cx, cy, rx, ry, hexColor = "#000000", opacity = 1);
+canvas.StrokeEllipse(cx, cy, rx, ry, hexColor = "#000000", lineWidth = 1, opacity = 1);
 canvas.DrawEllipse  (cx, cy, rx, ry,
-    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1);
+    fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1, opacity = 1);
 ```
 
 ```csharp
 c.FillEllipse(100, 40, 80, 30, Color.Purple.Lighten3);   // wide, flat ellipse
+```
+
+---
+
+### Text
+
+```csharp
+canvas.Text(text, x, y,
+    hexColor = "#000000", fontSize = 12,
+    fontFamily = null, bold = false, italic = false, opacity = 1);
+```
+
+Places one line of text with its **baseline** at `(x, y)` — not the top-left
+corner every other primitive uses, since a baseline is what lets a label sit
+flush against an axis line or the shape it annotates. `fontFamily` renders
+through a font registered with `FontFamily.Register(...)` when the name
+matches one, otherwise through the standard-14 family it resolves to
+(Helvetica/Times/Courier; `null` or unrecognised defaults to Helvetica) —
+exactly the same resolution every other TerraPDF text API uses. `Text` draws
+one line only: no wrapping, no automatic fitting.
+
+```csharp
+c.Text("Q1", 10, 100, Color.Grey.Darken2, 9);                       // axis label
+c.Text("Revenue", 10, 20, Color.Blue.Darken2, 16, bold: true);      // title
+c.Text("वित्तीय रिपोर्ट", 10, 140, fontFamily: "NotoSansDevanagari"); // via a registered custom font
+```
+
+Use `VectorCanvas.MeasureTextWidth(text, fontSize, fontFamily, bold, italic)`
+(a `static` method — no canvas instance needed) to measure a label before
+placing it, since `Text` doesn't align or fit text itself:
+
+```csharp
+string label = "Total: $4,820";
+double w = VectorCanvas.MeasureTextWidth(label, 12, bold: true);
+c.Text(label, (canvasWidth - w) / 2, 20, bold: true);   // centred
 ```
 
 ---
@@ -231,6 +266,7 @@ canvas.Path(p => p
 | `.Fill(hexColor)` | Fill the path with the given colour |
 | `.Stroke(hexColor, lineWidth = 1)` | Stroke the path outline |
 | `.UseEvenOddFill()` | Use even-odd rule (for shapes with holes, e.g. donuts) |
+| `.Opacity(opacity)` | Constant alpha for both fill and stroke (1 = opaque, default) |
 
 You can call both `.Fill()` and `.Stroke()` on the same path to fill and stroke it.
 
@@ -247,24 +283,54 @@ canvas.Path(p => p
 
 ---
 
+## Opacity
+
+Every fill/stroke primitive (and `PathDescriptor.Opacity(...)` for arbitrary
+paths) takes a trailing `opacity` parameter — 1 (fully opaque) by default, down
+to 0 (fully transparent). It sets a real PDF `/ExtGState` constant alpha
+(`/ca`/`/CA`), so shapes actually blend with whatever is underneath — not a
+lighter version of the same colour:
+
+```csharp
+container.Canvas(120, c =>
+{
+    c.FillRect(0,  0, 100, 100, "#FF0000");              // opaque red
+    c.FillRect(50, 50, 100, 100, "#0000FF", opacity: 0.5); // translucent blue overlay
+    // the overlap renders as a genuine alpha blend, not a third flat colour
+});
+```
+
+Omitting `opacity` (or passing `1`) costs nothing — no `/ExtGState` resource
+or `gs` operator is emitted at all, so existing calls are unaffected. Distinct
+opacity values used anywhere in a document are deduplicated into shared
+`/ExtGState` resources, the same way repeated images and fonts are.
+
+This is the building block "highlight fills, tinted overlays, and ghosted
+backgrounds" are made of — draw a shape at reduced opacity over existing
+content.
+
+---
+
 ## All `VectorCanvas` methods at a glance
 
 | Method | Description |
 |--------|-------------|
-| `Line(x1,y1, x2,y2, color, lw)` | Straight line |
-| `FillRect(x,y,w,h, color)` | Filled rectangle |
-| `StrokeRect(x,y,w,h, color, lw)` | Stroked rectangle |
-| `DrawRect(x,y,w,h, fill, stroke, lw)` | Filled + stroked rectangle |
-| `FillRoundedRect(x,y,w,h, r, color)` | Filled rounded rectangle |
-| `StrokeRoundedRect(x,y,w,h, r, color, lw)` | Stroked rounded rectangle |
-| `DrawRoundedRect(x,y,w,h, r, fill, stroke, lw)` | Filled + stroked rounded rect |
-| `FillCircle(cx,cy, r, color)` | Filled circle |
-| `StrokeCircle(cx,cy, r, color, lw)` | Stroked circle |
-| `DrawCircle(cx,cy, r, fill, stroke, lw)` | Filled + stroked circle |
-| `FillEllipse(cx,cy, rx,ry, color)` | Filled ellipse |
-| `StrokeEllipse(cx,cy, rx,ry, color, lw)` | Stroked ellipse |
-| `DrawEllipse(cx,cy, rx,ry, fill, stroke, lw)` | Filled + stroked ellipse |
+| `Line(x1,y1, x2,y2, color, lw, opacity)` | Straight line |
+| `FillRect(x,y,w,h, color, opacity)` | Filled rectangle |
+| `StrokeRect(x,y,w,h, color, lw, opacity)` | Stroked rectangle |
+| `DrawRect(x,y,w,h, fill, stroke, lw, opacity)` | Filled + stroked rectangle |
+| `FillRoundedRect(x,y,w,h, r, color, opacity)` | Filled rounded rectangle |
+| `StrokeRoundedRect(x,y,w,h, r, color, lw, opacity)` | Stroked rounded rectangle |
+| `DrawRoundedRect(x,y,w,h, r, fill, stroke, lw, opacity)` | Filled + stroked rounded rect |
+| `FillCircle(cx,cy, r, color, opacity)` | Filled circle |
+| `StrokeCircle(cx,cy, r, color, lw, opacity)` | Stroked circle |
+| `DrawCircle(cx,cy, r, fill, stroke, lw, opacity)` | Filled + stroked circle |
+| `FillEllipse(cx,cy, rx,ry, color, opacity)` | Filled ellipse |
+| `StrokeEllipse(cx,cy, rx,ry, color, lw, opacity)` | Stroked ellipse |
+| `DrawEllipse(cx,cy, rx,ry, fill, stroke, lw, opacity)` | Filled + stroked ellipse |
 | `Path(Action<PathDescriptor>)` | Arbitrary path with full Bézier support |
+| `Text(text, x,y, color, size, family, bold, italic, opacity)` | Text label, baseline at (x, y) |
+| `MeasureTextWidth(text, size, family, bold, italic)` (static) | Advance width for aligning/centring a label |
 | `Grid(cw, ch?, color, lw)` | Full-canvas rectangular grid |
 
 ---
@@ -285,6 +351,7 @@ canvas.Path(p => p
 | `Fill(hexColor)` | Set fill paint |
 | `Stroke(hexColor, lw)` | Set stroke paint and width |
 | `UseEvenOddFill()` | Switch to even-odd fill rule |
+| `Opacity(opacity)` | Constant alpha for fill and stroke (1 = opaque, default) |
 
 ---
 

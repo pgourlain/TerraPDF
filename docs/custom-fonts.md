@@ -87,9 +87,16 @@ behaviour as the standard fonts substituting `?` for unmappable characters.
   `NotSupportedException` — a different embedding path
   (`/FontFile3`, `CIDFontType0`) would be needed for those. Future versions
   may add it.
-- **No glyph subsetting.** The whole font file is embedded, so a large
-  font increases the output PDF's size accordingly. Future versions may
-  add subsetting to embed only the glyphs actually used.
+- **Glyph subsetting, stage 1 (blanking, no renumbering).** Every glyph a
+  document never shows (plus, for any glyph that is shown, whatever
+  component glyphs it references if it's a composite — e.g. most accented
+  Latin letters) is blanked out of `glyf` before embedding; glyph IDs are
+  never renumbered, so this is transparent and automatic. Tables sized per
+  glyph regardless of usage — `hmtx`, `loca`, `cmap`, `GSUB`/`GPOS`, `post`,
+  `name` — are not yet trimmed, so the realistic size win on a full font is
+  substantial (roughly half, measured) rather than the near-total reduction
+  a `glyf`-only view would suggest. Full re-indexed subsetting (shrinking
+  those tables too) may follow in a future version.
 - **No synthetic bold/italic.** If a style wasn't registered, TerraPDF
   falls back to the closest registered variant rather than skewing or
   thickening glyphs to approximate it.

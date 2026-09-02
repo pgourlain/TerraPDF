@@ -6,6 +6,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+---
+
+## [2.1.0] - 2026-09-03
+
+Three additions, all backward compatible: font embedding now subsets
+automatically, the vector canvas gained real translucency, and the vector
+canvas can place text. No public API was removed or changed — existing calls
+keep behaving exactly as before.
+
+### Added (automatic font subsetting)
+- **`FontFamily.Register(...)` now embeds only the glyphs a document actually
+  shows**, instead of the whole font file. Stage 1: every glyph a document
+  never draws is blanked out of the font's `glyf` table — glyph IDs are never
+  renumbered, so `cmap`, `hmtx`, `GSUB`, and `Identity-H`/`CIDToGIDMap` all
+  stay valid with no other change. Fully automatic; no new API.
+- **Composite-glyph closure.** Accented Latin letters and Devanagari
+  conjuncts are commonly composite glyphs — built from component glyphs no
+  content stream ever references by ID directly. Blanking now computes the
+  closure of shown glyphs under their composite references first, so an
+  accent or conjunct never loses a component that happens to be otherwise
+  unused.
+- Measured, not assumed: a custom-font sample with mixed Latin/Cyrillic/Greek
+  text dropped from 718KB to 320KB (55% smaller); a Devanagari report using
+  two font variants (regular + bold) dropped from 152KB to 77KB (49%
+  smaller). In both cases `glyf` itself shrank by over 99%; the realistic
+  whole-document win is capped below that because tables sized per glyph
+  regardless of usage (`hmtx`, `loca`, `cmap`, `GSUB`/`GPOS`, `post`, `name`)
+  are not yet trimmed — see "Known limitations."
+
+### Added (graphics state / constant alpha)
+- **`/ExtGState` and the `gs` operator** — the first transparency mechanism
+  in the writer beyond per-pixel image `/SMask`. Distinct opacity values used
+  anywhere in a document are deduplicated into shared `/ExtGState` resources,
+  the same way repeated images and fonts already are.
+- Every `VectorCanvas` fill/stroke primitive (`Line`, `FillRect`/`StrokeRect`/
+  `DrawRect`, the rounded-rectangle and ellipse/circle families, `Path`) takes
+  a trailing `opacity` parameter (`1` = fully opaque, the default — omitting
+  it costs nothing, no `/ExtGState` is emitted at all). `PathDescriptor`
+  gained a matching `.Opacity(...)` fluent setter.
+
+### Added (text on the vector canvas)
+- **`VectorCanvas.Text(text, x, y, ...)`** places one line of text with its
+  baseline at `(x, y)` — the one canvas primitive that isn't top-left
+  anchored, since a baseline is what lets a label sit flush against an axis
+  line or the shape it annotates. Renders through a registered custom font
+  when `fontFamily` names one, otherwise the standard-14 families — the same
+  resolution every other TerraPDF text API uses. Supports `opacity` like
+  every other primitive (ghosted/watermark-style canvas text).
+- **`VectorCanvas.MeasureTextWidth(...)`** (`static`) — measures a label in
+  the same font `Text` would render it in, for centering or right-aligning
+  before placing it.
+
+### Fixed (samples)
+- `10_VectorGraphicsShowcase.cs`: four shapes (a concentric-circle group, a
+  Bézier teardrop, a star polygon, a diamond ring) were positioned wider than
+  their panel's actual available width and bled past the page margin, one of
+  them almost to the physical page edge. The donut chart's legend was drawn
+  twice — bare colour swatches on the canvas with no labels (canvas text
+  didn't exist yet when this sample was written), plus a second, separately
+  laid-out text list stacked *below* the chart instead of beside it, wrapping
+  awkwardly. Retightened the overflowing layouts and rebuilt the legend as a
+  single swatch-plus-label pass using the new `VectorCanvas.Text`.
+
+### Known limitations
+- Font subsetting stage 1 does not renumber glyph IDs or shrink tables sized
+  per glyph regardless of usage (`hmtx`, `loca`, `cmap`, `GSUB`/`GPOS`,
+  `post`, `name`), so the size win on a full font is substantial but well
+  short of what `glyf` alone shrinking by over 99% would suggest. Full
+  re-indexed subsetting may follow in a future version.
+- `/ExtGState` opacity is wired through `VectorCanvas` and canvas text only;
+  `DrawImage`, flowed text (`TextBlock`), and `Background()`/border colours
+  do not yet take an opacity parameter.
+
+---
+
 ## [2.0.1] - 2026-08-28
 
 A table-correctness release. Every fix below addresses a case that produced a
@@ -544,7 +621,8 @@ happened to fall inside a spanned pair.
 - CI workflow (GitHub Actions): build, test, coverage.
 - Publish workflow (GitHub Actions): NuGet + symbols on release tag.
 
-[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sahebansari/TerraPDF/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/sahebansari/TerraPDF/compare/v1.5.0...v1.5.1

@@ -16,6 +16,7 @@ public sealed class PathDescriptor
     internal PdfColor? StrokeColor { get; private set; }
     internal double    LineWidth   { get; private set; } = 1;
     internal bool      EvenOddFill { get; private set; }
+    internal double    PaintOpacity { get; private set; } = 1;
 
     // ── Move / Line ─────────────────────────────────────────────────────────
 
@@ -173,6 +174,19 @@ public sealed class PathDescriptor
     public PathDescriptor UseEvenOddFill()
     {
         EvenOddFill = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets constant alpha for both fill and stroke on this path (1 = fully
+    /// opaque, the default; e.g. 0.4 for a translucent highlight or tint).
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="opacity"/> is outside [0, 1].</exception>
+    public PathDescriptor Opacity(double opacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(opacity, 0.0, nameof(opacity));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(opacity, 1.0, nameof(opacity));
+        PaintOpacity = opacity;
         return this;
     }
 }

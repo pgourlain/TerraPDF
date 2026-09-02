@@ -169,12 +169,59 @@ internal sealed class PdfPage
     }
 
     // --------------------------------------------------------------
+    //  Graphics state (constant alpha) resources
+    // --------------------------------------------------------------
+
+    private readonly Dictionary<double, string> _extGStateAliasByOpacity = new();
+
+    /// <summary>Constant-alpha ExtGState resources used on this page: page-local alias → opacity (sets both /ca and /CA).</summary>
+    internal Dictionary<string, double> ExtGStateObjects { get; } = new();
+
+    /// <summary>
+    /// Returns the page-local alias for an <c>/ExtGState</c> resource setting both
+    /// <c>/ca</c> and <c>/CA</c> to <paramref name="opacity"/>, reusing an existing
+    /// alias for the same (3-decimal-rounded) value.
+    /// </summary>
+    private string GetOrAddExtGStateAlias(double opacity)
+    {
+        double rounded = Math.Round(opacity, 3);
+        if (_extGStateAliasByOpacity.TryGetValue(rounded, out string? existing))
+            return existing;
+
+        string alias = $"GS{_extGStateAliasByOpacity.Count + 1}";
+        _extGStateAliasByOpacity[rounded] = alias;
+        ExtGStateObjects[alias] = rounded;
+        return alias;
+    }
+
+    /// <summary>
+    /// Opens a <c>q</c>/<c>/GSx gs</c> scope when <paramref name="opacity"/> is below
+    /// full opacity, so the caller's paint operators draw translucent without leaking
+    /// that state into whatever draws after — mirrors the <c>q</c>/<c>Q</c> scoping
+    /// <see cref="DrawImage"/> already uses. Returns whether a scope was opened, so the
+    /// caller knows whether to close it with a matching <c>Q</c>.
+    /// </summary>
+    internal bool BeginOpacityScope(double opacity)
+    {
+        if (opacity >= 1) return false;
+        _ops.Append("q\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"/{GetOrAddExtGStateAlias(opacity)} gs\n");
+        return true;
+    }
+
+    internal void EndOpacityScope(bool opened)
+    {
+        if (opened) _ops.Append("Q\n");
+    }
+
+    // --------------------------------------------------------------
     //  Drawing operations (primitive overloads - used by new API)
     // --------------------------------------------------------------
 
     internal void AddLine(double x1, double y1, double x2, double y2,
-        PdfColor color, double lineWidth = 1)
+        PdfColor color, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         // Flip both endpoints from top-left to bottom-left origin
         double pdfY1 = Height - y1;
         double pdfY2 = Height - y2;
@@ -183,16 +230,19 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x1)} {F(pdfY1)} m\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x2)} {F(pdfY2)} l\n");
         _ops.Append("S\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled rectangle (no border).</summary>
-    internal void AddFilledRect(double x, double y, double w, double h, PdfColor fillColor)
+    internal void AddFilledRect(double x, double y, double w, double h, PdfColor fillColor, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         // PDF rect origin is bottom-left corner, so shift by h after flipping Y
         double pdfY = Height - y - h;
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x)} {F(pdfY)} {F(w)} {F(h)} re\n");
         _ops.Append("f\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>
@@ -224,25 +274,29 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked (outline-only) rectangle.</summary>
     internal void AddStrokedRect(double x, double y, double w, double h,
-        PdfColor strokeColor, double lineWidth = 1)
+        PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x)} {F(pdfY)} {F(w)} {F(h)} re\n");
         _ops.Append("S\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled-and-stroked rectangle.</summary>
     internal void AddRect(double x, double y, double w, double h,
-        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1)
+        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x)} {F(pdfY)} {F(w)} {F(h)} re\n");
         _ops.Append("B\n");
+        EndOpacityScope(scope);
     }
 
     // --------------------------------------------------------------
@@ -297,32 +351,38 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked rounded rectangle.</summary>
     internal void AddRoundedRect(double x, double y, double w, double h,
-        double radius, PdfColor strokeColor, double lineWidth = 1)
+        double radius, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("S\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled rounded rectangle (no border).</summary>
     internal void AddFilledRoundedRect(double x, double y, double w, double h,
-        double radius, PdfColor fillColor)
+        double radius, PdfColor fillColor, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("f\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled-and-stroked rounded rectangle.</summary>
     internal void AddFilledAndStrokedRoundedRect(double x, double y, double w, double h,
-        double radius, PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1)
+        double radius, PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("B\n");
+        EndOpacityScope(scope);
     }
 
     // --------------------------------------------------------------
@@ -352,32 +412,38 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked ellipse.</summary>
     internal void AddStrokedEllipse(double cx, double cy, double rx, double ry,
-        PdfColor strokeColor, double lineWidth = 1)
+        PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("S\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled ellipse (no border).</summary>
     internal void AddFilledEllipse(double cx, double cy, double rx, double ry,
-        PdfColor fillColor)
+        PdfColor fillColor, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("f\n");
+        EndOpacityScope(scope);
     }
 
     /// <summary>Draws a filled and stroked ellipse.</summary>
     internal void AddFilledAndStrokedEllipse(double cx, double cy, double rx, double ry,
-        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1)
+        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(fillColor.R)} {C(fillColor.G)} {C(fillColor.B)} rg\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("B\n");
+        EndOpacityScope(scope);
     }
 
     // --------------------------------------------------------------
@@ -386,11 +452,15 @@ internal sealed class PdfPage
 
     /// <summary>
     /// Begins a new path sequence.  Sets stroke/fill colours and line width
-    /// if the corresponding paint is requested.
+    /// if the corresponding paint is requested. Returns whether an opacity
+    /// scope was opened (<paramref name="opacity"/> &lt; 1) — pass that
+    /// return value as the matching <see cref="EndPath"/> call's
+    /// <c>opacityScopeOpen</c> argument so it closes the scope.
     /// </summary>
-    internal void BeginPath(
-        PdfColor? fillColor, PdfColor? strokeColor, double lineWidth, bool evenOdd)
+    internal bool BeginPath(
+        PdfColor? fillColor, PdfColor? strokeColor, double lineWidth, bool evenOdd, double opacity = 1)
     {
+        bool scope = BeginOpacityScope(opacity);
         if (strokeColor.HasValue)
         {
             _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
@@ -402,6 +472,7 @@ internal sealed class PdfPage
             var fc = fillColor.Value;
             _ops.Append(CultureInfo.InvariantCulture, $"{C(fc.R)} {C(fc.G)} {C(fc.B)} rg\n");
         }
+        return scope;
     }
 
     /// <summary>Appends a moveto operator (top-left origin, Y flipped internally).</summary>
@@ -438,7 +509,7 @@ internal sealed class PdfPage
     /// Ends a path sequence by emitting the appropriate paint operator
     /// (fill, stroke, fill+stroke, or no-op if neither is set).
     /// </summary>
-    internal void EndPath(PdfColor? fillColor, PdfColor? strokeColor, bool evenOdd)
+    internal void EndPath(PdfColor? fillColor, PdfColor? strokeColor, bool evenOdd, bool opacityScopeOpen = false)
     {
         if (fillColor.HasValue && strokeColor.HasValue)
             _ops.Append(evenOdd ? "B*\n" : "B\n");
@@ -449,6 +520,7 @@ internal sealed class PdfPage
         // else: path with no paint — just discard with n (no-op)
         else
             _ops.Append("n\n");
+        EndOpacityScope(opacityScopeOpen);
     }
 
     // --------------------------------------------------------------

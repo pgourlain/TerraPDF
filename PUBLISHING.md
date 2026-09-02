@@ -137,7 +137,7 @@ the exact commit on GitHub, enabling debugger step-in for consumers.
 | `<PackageReadmeFile>` | Bundles `README.md` into the package |
 | `<PackageLicenseExpression>MIT` | SPDX licence, shown on nuget.org |
 | `<PackageProjectUrl>` | GitHub link shown on nuget.org |
-| `<PackageReleaseNotes>` | URL to CHANGELOG.md |
+| `<PackageReleaseNotes>` | Plain-text summary of the release, with the CHANGELOG.md URL when useful |
 | `<IncludeSymbols>` / `<SymbolPackageFormat>snupkg` | Produces the `.snupkg` |
 | `<Deterministic>` | Reproducible byte-identical builds |
 | `<ContinuousIntegrationBuild>` | Activates deterministic mode on GitHub Actions |
