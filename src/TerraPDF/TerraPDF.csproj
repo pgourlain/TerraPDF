@@ -60,7 +60,7 @@
 
   <!-- Source Link — maps PDB paths back to GitHub source for debugger step-in -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="All" />
   </ItemGroup>
 
   <!-- Allow unit-test project to access internal APIs -->

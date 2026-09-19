@@ -12,11 +12,11 @@ public sealed class PathDescriptor
     internal readonly List<VectorPathCommand> Commands = [];
 
     // Paint state
-    internal PdfColor? FillColor   { get; private set; }
+    internal PdfColor? FillColor { get; private set; }
     internal PdfColor? StrokeColor { get; private set; }
-    internal double    LineWidth   { get; private set; } = 1;
-    internal bool      EvenOddFill { get; private set; }
-    internal double    PaintOpacity { get; private set; } = 1;
+    internal double LineWidth { get; private set; } = 1;
+    internal bool EvenOddFill { get; private set; }
+    internal double PaintOpacity { get; private set; } = 1;
 
     // ── Move / Line ─────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ public sealed class PathDescriptor
     public PathDescriptor CurveTo(
         double cx1, double cy1,
         double cx2, double cy2,
-        double x,   double y)
+        double x, double y)
     {
         Commands.Add(new CurveToCmd(cx1, cy1, cx2, cy2, x, y));
         return this;
@@ -68,7 +68,7 @@ public sealed class PathDescriptor
         return MoveTo(x, y)
               .LineTo(x + width, y)
               .LineTo(x + width, y + height)
-              .LineTo(x,         y + height)
+              .LineTo(x, y + height)
               .Close();
     }
 
@@ -87,9 +87,9 @@ public sealed class PathDescriptor
         double ky = ry * k;
 
         return MoveTo(cx + rx, cy)
-              .CurveTo(cx + rx, cy - ky, cx + kx, cy - ry, cx,      cy - ry)
+              .CurveTo(cx + rx, cy - ky, cx + kx, cy - ry, cx, cy - ry)
               .CurveTo(cx - kx, cy - ry, cx - rx, cy - ky, cx - rx, cy)
-              .CurveTo(cx - rx, cy + ky, cx - kx, cy + ry, cx,      cy + ry)
+              .CurveTo(cx - rx, cy + ky, cx - kx, cy + ry, cx, cy + ry)
               .CurveTo(cx + kx, cy + ry, cx + rx, cy + ky, cx + rx, cy)
               .Close();
     }
@@ -102,6 +102,77 @@ public sealed class PathDescriptor
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(radius);
         return Ellipse(cx, cy, radius, radius);
+    }
+
+    /// <summary>
+    /// Appends an elliptical arc. Angles are degrees clockwise from the right-hand point,
+    /// matching the canvas top-left coordinate system. Negative sweeps run counter-clockwise,
+    /// a zero sweep adds no commands, and sweeps beyond one revolution are preserved.
+    /// </summary>
+    /// <param name="cx">Horizontal coordinate of the ellipse centre in points.</param>
+    /// <param name="cy">Vertical coordinate of the ellipse centre in points.</param>
+    /// <param name="rx">Horizontal radius in points.</param>
+    /// <param name="ry">Vertical radius in points.</param>
+    /// <param name="startAngle">Start angle in degrees clockwise from the right-hand point.</param>
+    /// <param name="sweepAngle">Signed sweep angle in degrees.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative.</exception>
+    public PathDescriptor Arc(double cx, double cy, double rx, double ry,
+        double startAngle, double sweepAngle)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rx);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ry);
+        if (sweepAngle == 0) return this;
+
+        double start = startAngle * Math.PI / 180.0;
+        double remaining = sweepAngle * Math.PI / 180.0;
+        double stepLimit = Math.PI / 2;
+        double step = Math.CopySign(Math.Min(Math.Abs(remaining), stepLimit), remaining);
+
+        double x = cx + rx * Math.Cos(start);
+        double y = cy + ry * Math.Sin(start);
+        MoveTo(x, y);
+
+        while (Math.Abs(remaining) > 1e-12)
+        {
+            step = Math.CopySign(Math.Min(Math.Abs(remaining), stepLimit), remaining);
+            double end = start + step;
+            double tangent = 4.0 / 3.0 * Math.Tan(step / 4.0);
+            double endX = cx + rx * Math.Cos(end);
+            double endY = cy + ry * Math.Sin(end);
+            double control1X = x - tangent * rx * Math.Sin(start);
+            double control1Y = y + tangent * ry * Math.Cos(start);
+            double control2X = endX + tangent * rx * Math.Sin(end);
+            double control2Y = endY - tangent * ry * Math.Cos(end);
+
+            CurveTo(control1X, control1Y, control2X, control2Y, endX, endY);
+            x = endX;
+            y = endY;
+            start = end;
+            remaining -= step;
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// Appends a closed elliptical sector by drawing an arc, connecting its end to the
+    /// centre, and closing the subpath. A zero sweep adds no commands.
+    /// </summary>
+    /// <param name="cx">Horizontal coordinate of the ellipse centre in points.</param>
+    /// <param name="cy">Vertical coordinate of the ellipse centre in points.</param>
+    /// <param name="rx">Horizontal radius in points.</param>
+    /// <param name="ry">Vertical radius in points.</param>
+    /// <param name="startAngle">Start angle in degrees clockwise from the right-hand point.</param>
+    /// <param name="sweepAngle">Signed sweep angle in degrees; values beyond one revolution are preserved.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative.</exception>
+    public PathDescriptor Sector(double cx, double cy, double rx, double ry,
+        double startAngle, double sweepAngle)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rx);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ry);
+        if (sweepAngle == 0) return this;
+        Arc(cx, cy, rx, ry, startAngle, sweepAngle);
+        return LineTo(cx, cy).Close();
     }
 
     /// <summary>
@@ -163,7 +234,7 @@ public sealed class PathDescriptor
         ArgumentException.ThrowIfNullOrWhiteSpace(hexColor);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(lineWidth);
         StrokeColor = PdfColor.FromHex(hexColor);
-        LineWidth   = lineWidth;
+        LineWidth = lineWidth;
         return this;
     }
 

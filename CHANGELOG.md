@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Positioned PNG/JPEG images on `VectorCanvas` from file paths, byte arrays,
+  and streams, with `Stretch`, `Contain`, centred or top-left `Cover`, and
+  natural-size top-left crop modes. Image clipping is isolated from subsequent
+  canvas commands.
+- Optional clockwise text rotation around the canvas text baseline point for
+  standard and registered custom fonts.
+- Elliptical arcs and closed sectors through `PathDescriptor`, plus
+  `FillPie`, `StrokePie`, and `DrawPie` canvas conveniences.
+- Native dash patterns and phases for canvas lines and stroked rectangles.
+
+### Fixed
+- PNG decoding now supports 8-bit grayscale images with alpha (colour type 4).
+
+### Changed
+- Updated `Microsoft.SourceLink.GitHub` to `10.0.401` to remove the vulnerable
+  transitive `Microsoft.Build.Tasks.Git` 8.0.0 dependency.
+
 ---
 
 ## [2.1.0] - 2026-09-03

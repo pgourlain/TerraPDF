@@ -12,12 +12,12 @@ internal sealed class PdfPage
 {
     private readonly StringBuilder _ops = new();
 
-    public double Width  { get; }
+    public double Width { get; }
     public double Height { get; }
 
     internal PdfPage(double width, double height)
     {
-        Width  = width;
+        Width = width;
         Height = height;
     }
 
@@ -28,11 +28,11 @@ internal sealed class PdfPage
     // State inside the current text object. Font/colour are re-emitted only
     // when they change between ShowTextAt calls; the Td origin is tracked so
     // each positioning operator is a small relative move.
-    private string?   _textFontAlias;
-    private double    _textFontSize;
+    private string? _textFontAlias;
+    private double _textFontSize;
     private PdfColor? _textColor;
-    private double    _textTdX;
-    private double    _textTdY;
+    private double _textTdX;
+    private double _textTdY;
 
     /// <summary>
     /// Opens a text object (<c>BT</c>). All state is reset — the PDF text
@@ -43,10 +43,10 @@ internal sealed class PdfPage
     {
         _ops.Append("BT\n");
         _textFontAlias = null;
-        _textFontSize  = 0;
-        _textColor     = null;
-        _textTdX       = 0;
-        _textTdY       = 0;
+        _textFontSize = 0;
+        _textColor = null;
+        _textTdX = 0;
+        _textTdY = 0;
     }
 
     /// <summary>
@@ -82,6 +82,39 @@ internal sealed class PdfPage
         _ops.Append(" Tj\n");
     }
 
+    /// <summary>Shows text at a baseline rotated clockwise in the caller's top-left coordinate system.</summary>
+    internal void ShowTextAtRotated(string text, double x, double y, double fontSize,
+        PdfColor color, double angle, PdfFontFamily family = PdfFontFamily.Helvetica,
+        bool bold = false, bool italic = false)
+    {
+        string fontAlias = PdfFonts.Alias(family, bold, italic);
+        EmitFontAndColor(fontAlias, fontSize, color);
+        double radians = angle * Math.PI / 180.0;
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        double pdfX = Math.Round(x, 2);
+        double pdfY = Math.Round(Height - y, 2);
+        _ops.Append(CultureInfo.InvariantCulture,
+            $"{F(cos)} {F(-sin)} {F(sin)} {F(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"({EscapeForPdfString(text)}) Tj\n");
+    }
+
+    internal void ShowTextAtRotated(string text, double x, double y, double fontSize,
+        PdfColor color, double angle, TrueType.CustomFontVariant variant)
+    {
+        string fontAlias = GetOrAddCustomFontAlias(variant);
+        EmitFontAndColor(fontAlias, fontSize, color);
+        double radians = angle * Math.PI / 180.0;
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        double pdfX = Math.Round(x, 2);
+        double pdfY = Math.Round(Height - y, 2);
+        _ops.Append(CultureInfo.InvariantCulture,
+            $"{F(cos)} {F(-sin)} {F(sin)} {F(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
+        _ops.Append(EncodeIdentityHHex(text, variant));
+        _ops.Append(" Tj\n");
+    }
+
     /// <summary>
     /// Emits the colour (<c>rg</c>), font (<c>Tf</c>), and position (<c>Td</c>) operators
     /// shared by every text-showing call, re-emitting colour/font only when they differ
@@ -90,6 +123,19 @@ internal sealed class PdfPage
     /// operators they have in common.
     /// </summary>
     private void EmitFontColorAndPosition(string fontAlias, double fontSize, PdfColor color, double x, double y)
+    {
+        EmitFontAndColor(fontAlias, fontSize, color);
+
+        // Td moves relative to the previous text-line origin. Deltas are taken
+        // between rounded absolute positions so rounding never accumulates.
+        double pdfX = Math.Round(x, 2);
+        double pdfY = Math.Round(Height - y, 2);
+        _ops.Append(CultureInfo.InvariantCulture, $"{F(pdfX - _textTdX)} {F(pdfY - _textTdY)} Td\n");
+        _textTdX = pdfX;
+        _textTdY = pdfY;
+    }
+
+    private void EmitFontAndColor(string fontAlias, double fontSize, PdfColor color)
     {
         if (_textColor is null || !_textColor.Value.Equals(color))
         {
@@ -101,16 +147,8 @@ internal sealed class PdfPage
         {
             _ops.Append(CultureInfo.InvariantCulture, $"/{fontAlias} {F(fontSize)} Tf\n");
             _textFontAlias = fontAlias;
-            _textFontSize  = fontSize;
+            _textFontSize = fontSize;
         }
-
-        // Td moves relative to the previous text-line origin. Deltas are taken
-        // between rounded absolute positions so rounding never accumulates.
-        double pdfX = Math.Round(x, 2);
-        double pdfY = Math.Round(Height - y, 2);
-        _ops.Append(CultureInfo.InvariantCulture, $"{F(pdfX - _textTdX)} {F(pdfY - _textTdY)} Td\n");
-        _textTdX = pdfX;
-        _textTdY = pdfY;
     }
 
     /// <summary>
@@ -214,13 +252,44 @@ internal sealed class PdfPage
         if (opened) _ops.Append("Q\n");
     }
 
+    private bool BeginDashScope(double[]? dashPattern, double dashPhase)
+    {
+        if (dashPattern is null) return false;
+        _ops.Append("q\n[");
+        for (var index = 0; index < dashPattern.Length; index++)
+        {
+            if (index > 0) _ops.Append(' ');
+            _ops.Append(F(dashPattern[index]));
+        }
+        _ops.Append(CultureInfo.InvariantCulture, $"] {F(dashPhase)} d\n");
+        return true;
+    }
+
+    private void EndDashScope(bool opened)
+    {
+        if (opened) _ops.Append("Q\n");
+    }
+
     // --------------------------------------------------------------
     //  Drawing operations (primitive overloads - used by new API)
     // --------------------------------------------------------------
 
     internal void AddLine(double x1, double y1, double x2, double y2,
-        PdfColor color, double lineWidth = 1, double opacity = 1)
+        PdfColor color, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = dashPattern is not null;
+        if (dashScope)
+        {
+            _ops.Append("q\n");
+            _ops.Append('[');
+            for (var index = 0; index < dashPattern!.Length; index++)
+            {
+                if (index > 0) _ops.Append(' ');
+                _ops.Append(F(dashPattern[index]));
+            }
+            _ops.Append(CultureInfo.InvariantCulture, $"] {F(dashPhase)} d\n");
+        }
         bool scope = BeginOpacityScope(opacity);
         // Flip both endpoints from top-left to bottom-left origin
         double pdfY1 = Height - y1;
@@ -231,6 +300,7 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x2)} {F(pdfY2)} l\n");
         _ops.Append("S\n");
         EndOpacityScope(scope);
+        if (dashScope) _ops.Append("Q\n");
     }
 
     /// <summary>Draws a filled rectangle (no border).</summary>
@@ -256,7 +326,7 @@ internal sealed class PdfPage
     internal void AddFilledRects(IEnumerable<(double X, double Y, double W, double H)> rects, PdfColor fillColor)
     {
         bool wroteColor = false;
-        bool wroteAny   = false;
+        bool wroteAny = false;
         foreach (var (x, y, w, h) in rects)
         {
             if (w <= 0 || h <= 0) continue;
@@ -274,8 +344,10 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked (outline-only) rectangle.</summary>
     internal void AddStrokedRect(double x, double y, double w, double h,
-        PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
@@ -283,12 +355,15 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x)} {F(pdfY)} {F(w)} {F(h)} re\n");
         _ops.Append("S\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     /// <summary>Draws a filled-and-stroked rectangle.</summary>
     internal void AddRect(double x, double y, double w, double h,
-        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
@@ -297,6 +372,7 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x)} {F(pdfY)} {F(w)} {F(h)} re\n");
         _ops.Append("B\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     // --------------------------------------------------------------
@@ -319,9 +395,9 @@ internal sealed class PdfPage
         r = Math.Min(r, Math.Min(w, h) / 2.0);
 
         // All coordinates in PDF bottom-left origin
-        double b  = Height - y - h;   // bottom Y in PDF coords
-        double t  = Height - y;       // top    Y in PDF coords
-        double k  = r * _bezierArcK;
+        double b = Height - y - h;   // bottom Y in PDF coords
+        double t = Height - y;       // top    Y in PDF coords
+        double k = r * _bezierArcK;
 
         // Start at top-left corner, just right of the top-left arc
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x + r)} {F(t)} m\n");
@@ -493,11 +569,11 @@ internal sealed class PdfPage
     internal void PathCurveTo(
         double cx1, double cy1,
         double cx2, double cy2,
-        double x,   double y)
+        double x, double y)
     {
         double pdfCy1 = Height - cy1;
         double pdfCy2 = Height - cy2;
-        double pdfY   = Height - y;
+        double pdfY = Height - y;
         _ops.Append(CultureInfo.InvariantCulture,
             $"{F(cx1)} {F(pdfCy1)} {F(cx2)} {F(pdfCy2)} {F(x)} {F(pdfY)} c\n");
     }
@@ -595,6 +671,16 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"/{alias} Do\n");
         _ops.Append("Q\n");
     }
+
+    internal void BeginClip(double x, double y, double width, double height)
+    {
+        double pdfY = Height - y - height;
+        _ops.Append("q\n");
+        _ops.Append(CultureInfo.InvariantCulture,
+            $"{F(x)} {F(pdfY)} {F(width)} {F(height)} re W n\n");
+    }
+
+    internal void EndClip() => _ops.Append("Q\n");
 
     // --------------------------------------------------------------
     //  Serialization

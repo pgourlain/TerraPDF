@@ -12,7 +12,7 @@ namespace TerraPDF.Elements;
 internal sealed class CanvasElement : Element
 {
     private readonly VectorCanvas _canvas;
-    private readonly double       _height;
+    private readonly double _height;
 
     internal CanvasElement(VectorCanvas canvas, double height)
     {
@@ -26,7 +26,7 @@ internal sealed class CanvasElement : Element
         int totalPagesHint = DefaultTotalPagesHint)
     {
         // Inject allocated size so Grid() can use it during the configure callback
-        _canvas.AllocatedWidth  = w;
+        _canvas.AllocatedWidth = w;
         _canvas.AllocatedHeight = _height;
         return new ElementSize(w, Math.Min(_height, h));
     }
@@ -35,7 +35,7 @@ internal sealed class CanvasElement : Element
 
     internal override void Draw(DrawingContext ctx)
     {
-        _canvas.AllocatedWidth  = ctx.Width;
+        _canvas.AllocatedWidth = ctx.Width;
         _canvas.AllocatedHeight = _height;
 
         foreach (var cmd in _canvas.Commands)
@@ -46,7 +46,8 @@ internal sealed class CanvasElement : Element
                     ctx.Page.AddLine(
                         ctx.X + lc.X1, ctx.Y + lc.Y1,
                         ctx.X + lc.X2, ctx.Y + lc.Y2,
-                        PdfColor.FromHex(lc.HexColor), lc.LineWidth, lc.Opacity);
+                        PdfColor.FromHex(lc.HexColor), lc.LineWidth, lc.Opacity,
+                        lc.DashPattern, lc.DashPhase);
                     break;
 
                 case VectorCanvas.DrawRectCmd rc:
@@ -65,6 +66,10 @@ internal sealed class CanvasElement : Element
                     DrawPath(ctx, pc.Path);
                     break;
 
+                case VectorCanvas.DrawImageCmd ic:
+                    DrawImage(ctx, ic);
+                    break;
+
                 case VectorCanvas.DrawTextCmd tc:
                     DrawText(ctx, tc);
                     break;
@@ -81,11 +86,13 @@ internal sealed class CanvasElement : Element
 
         if (rc.FillHex is not null && rc.StrokeHex is not null)
             ctx.Page.AddRect(ax, ay, rc.W, rc.H,
-                PdfColor.FromHex(rc.FillHex), PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity);
+                PdfColor.FromHex(rc.FillHex), PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity,
+                rc.DashPattern, rc.DashPhase);
         else if (rc.FillHex is not null)
             ctx.Page.AddFilledRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.FillHex), rc.Opacity);
         else if (rc.StrokeHex is not null)
-            ctx.Page.AddStrokedRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity);
+            ctx.Page.AddStrokedRect(ax, ay, rc.W, rc.H, PdfColor.FromHex(rc.StrokeHex), rc.LineWidth, rc.Opacity,
+                rc.DashPattern, rc.DashPhase);
     }
 
     private static void DrawRoundedRect(DrawingContext ctx, VectorCanvas.DrawRoundedRectCmd rr)
@@ -145,7 +152,7 @@ internal sealed class CanvasElement : Element
                     ctx.Page.PathCurveTo(
                         ctx.X + c.Cx1, ctx.Y + c.Cy1,
                         ctx.X + c.Cx2, ctx.Y + c.Cy2,
-                        ctx.X + c.X,   ctx.Y + c.Y);
+                        ctx.X + c.X, ctx.Y + c.Y);
                     break;
                 case ClosePathCmd:
                     ctx.Page.PathClose();
@@ -164,10 +171,26 @@ internal sealed class CanvasElement : Element
         bool opacityScope = ctx.Page.BeginOpacityScope(tc.Opacity);
         ctx.Page.BeginTextObject();
         if (font.IsCustom)
-            ctx.Page.ShowTextAtCustomFont(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.Custom!);
+        {
+            if (tc.Angle == 0)
+                ctx.Page.ShowTextAtCustomFont(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.Custom!);
+            else
+                ctx.Page.ShowTextAtRotated(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, tc.Angle, font.Custom!);
+        }
         else
-            ctx.Page.ShowTextAt(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.StandardFamily, tc.Bold, tc.Italic);
+        {
+            if (tc.Angle == 0)
+                ctx.Page.ShowTextAt(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, font.StandardFamily, tc.Bold, tc.Italic);
+            else
+                ctx.Page.ShowTextAtRotated(tc.Text, ctx.X + tc.X, ctx.Y + tc.Y, tc.FontSize, color, tc.Angle, font.StandardFamily, tc.Bold, tc.Italic);
+        }
         ctx.Page.EndTextObject();
         ctx.Page.EndOpacityScope(opacityScope);
+    }
+
+    private static void DrawImage(DrawingContext ctx, VectorCanvas.DrawImageCmd ic)
+    {
+        var image = new ImageElement(ic.Data);
+        image.DrawAt(ctx.Page, ctx.X + ic.X, ctx.Y + ic.Y, ic.W, ic.H, ic.Fit);
     }
 }

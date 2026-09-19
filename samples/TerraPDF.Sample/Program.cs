@@ -9,11 +9,11 @@ string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
 string sampleDir = args.Length > 0 ? args[0] : Path.Combine(desktop, "SamplePDF");
 Directory.CreateDirectory(sampleDir);
 
-string imgDir    = AppContext.BaseDirectory;          // images live next to the exe
+string imgDir = AppContext.BaseDirectory;          // images live next to the exe
 string headerImg = Path.Combine(imgDir, "header_logo.png");
-string smallImg  = Path.Combine(imgDir, "small_logo.jpg");
+string smallImg = Path.Combine(imgDir, "small_logo.jpg");
 
-Console.WriteLine("TerraPDF Samples - generating seventeen PDFs to Desktop...");
+Console.WriteLine("TerraPDF Samples - generating eighteen PDFs to Desktop...");
 Console.WriteLine();
 
 SimpleReport.Generate(Path.Combine(sampleDir, "01_simple_report.pdf"));
@@ -36,6 +36,7 @@ ChildNutritionIndiaReport.Generate(Path.Combine(sampleDir, "15_child_nutrition_i
 TableSpansShowcase.Generate(Path.Combine(sampleDir, "16_table_spans_showcase.pdf"));
 FontSubsettingShowcase.Generate(Path.Combine(sampleDir, "17_font_subsetting_showcase.pdf"),
     Path.Combine(imgDir, "Fonts", "Lato-Regular.ttf"), Path.Combine(imgDir, "Fonts", "NotoSansDevanagari-Regular.ttf"));
+CanvasMediaShowcase.Generate(Path.Combine(sampleDir, "18_canvas_media_showcase.pdf"), smallImg);
 
 Console.WriteLine();
 Console.WriteLine("Done.");

@@ -18,7 +18,7 @@ Devanagari-aware rendering (conjunct ligatures, reph, and below-base 'ra' forms,
 shaping engine) and automatic glyph subsetting, so only the glyphs a document actually uses are
 embedded. See [Custom Fonts](https://github.com/sahebansari/TerraPDF/blob/master/docs/custom-fonts.md).
 >
-> Also: Code128 barcodes and QR codes (ISO/IEC 18004, versions 1-40, all four error correction levels) via `container.Barcode(...)` and `container.QrCode(...)` — rendered as vector-filled rectangles, no raster image pipeline, placeable anywhere a `Column`, `Row`, or `Table` cell can go. The vector canvas (`container.Canvas(...)`) can now place text labels and draw with constant-alpha transparency. TerraPDF also multi-targets **.NET 10 (LTS)** alongside .NET 8 and 9.
+> Also: Code128 barcodes and QR codes (ISO/IEC 18004, versions 1-40, all four error correction levels) via `container.Barcode(...)` and `container.QrCode(...)` — rendered as vector-filled rectangles, no raster image pipeline, placeable anywhere a `Column`, `Row`, or `Table` cell can go. The vector canvas (`container.Canvas(...)`) supports positioned and clipped images, rotated text, arcs and pie sectors, dashed strokes, and constant-alpha transparency. TerraPDF also multi-targets **.NET 10 (LTS)** alongside .NET 8 and 9.
 
 TerraPDF is a lightweight, zero-dependency, pure C# PDF 1.7 writer for programmatic document generation.
 Its fluent API covers the full document-authoring lifecycle: page layout, rich text, tables, images,
@@ -82,7 +82,7 @@ runtime packages.
 - **Images from bytes and streams** — `Image(byte[])` / `Image(Stream)` with transparency and deduplication
 - **Anchor-based bookmarks** — bookmark content directly to rendered elements and keep destinations accurate
 - Full **WinAnsiEncoding** character coverage
-- **Vector graphics canvas** - lines, rectangles, rounded rectangles, circles, ellipses, arbitrary Bezier paths, polygons, text labels, and grid helpers via `container.Canvas()`
+- **Vector graphics canvas** - lines, dashed strokes, rectangles, circles, ellipses, arbitrary Bezier paths, arcs, pie sectors, rotated text, positioned images with fit/crop modes, and grid helpers via `container.Canvas()`
 - **Constant-alpha transparency** - translucent fills, strokes, and text on the vector canvas via `/ExtGState`, with `opacity` on every canvas primitive
 - **Code128 barcodes** - `container.Barcode(...)`, with optional human-readable caption, custom colours, and quiet zone
 - **QR codes** - `container.QrCode(...)`, full ISO/IEC 18004 generator (versions 1-40, error correction levels L/M/Q/H), rendered as vector rectangles
@@ -156,12 +156,12 @@ For complete API reference and detailed guides, visit the [docs](https://github.
 - **[Layout](https://github.com/sahebansari/TerraPDF/blob/master/docs/layout.md)** — Column, Row, and Table layouts with alignment, spacing, and cell spans
 - **[Row and Column Layout](https://github.com/sahebansari/TerraPDF/blob/master/docs/row-and-column-layout.md)** — Detailed Row and Column layout examples
 - **[Decorators](https://github.com/sahebansari/TerraPDF/blob/master/docs/decorators.md)** — Padding, margin, backgrounds, borders, and styling
-- **[Images](https://github.com/sahebansari/TerraPDF/blob/master/docs/images.md)** — PNG and JPEG embedding with sizing and alignment
+- **[Images](https://github.com/sahebansari/TerraPDF/blob/master/docs/images.md)** — PNG and JPEG embedding, positioned canvas images, fit modes, clipping, sizing, and alignment
 - **[Page Sizes & Units](https://github.com/sahebansari/TerraPDF/blob/master/docs/page-sizes-and-units.md)** — Built-in page sizes and unit conversions
 - **[Colors](https://github.com/sahebansari/TerraPDF/blob/master/docs/colors.md)** — Material Design color palette with shades
 - **[Encryption & Security](https://github.com/sahebansari/TerraPDF/blob/master/docs/encryption.md)** — AES-256 by default, with AES-128 compatibility mode and permission flags
 - **[Custom Fonts](https://github.com/sahebansari/TerraPDF/blob/master/docs/custom-fonts.md)** — embed TrueType fonts for brand typefaces and full Unicode (Cyrillic, Greek, and beyond)
-- **[Vector Graphics](https://github.com/sahebansari/TerraPDF/blob/master/docs/vector-graphics.md)** — Canvas API, shapes, paths, text labels, transparency, grids, and charts
+- **[Vector Graphics](https://github.com/sahebansari/TerraPDF/blob/master/docs/vector-graphics.md)** — Canvas API, images, rotated text, dashed strokes, arcs, sectors, transparency, grids, and charts
 - **[Table of Contents](https://github.com/sahebansari/TerraPDF/blob/master/docs/table-of-contents.md)** — Automatic TOC generation from headings
 - **[Bookmarks](https://github.com/sahebansari/TerraPDF/blob/master/docs/bookmarks.md)** — PDF bookmarks and outlines
 - **[Components & Templates](https://github.com/sahebansari/TerraPDF/blob/master/docs/components-and-templates.md)** — Reusable components and document templates

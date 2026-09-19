@@ -78,6 +78,53 @@ container.Image("icon.png", 32);
 
 ---
 
+## Positioned Images on a Vector Canvas
+
+`VectorCanvas.Image(...)` places an image in an absolute target rectangle. All
+coordinates and dimensions are PDF points relative to the canvas's top-left
+origin. File paths, raw bytes, and streams are supported:
+
+```csharp
+container.Canvas(220, canvas =>
+{
+    canvas.Image("photo.jpg", 0, 0, 180, 120, ImageFit.Contain);
+    canvas.Image(logoBytes, 200, 0, 180, 120, ImageFit.Cover);
+
+    using Stream source = OpenImage();
+    canvas.Image(source, 400, 0, 80, 80, ImageFit.Stretch);
+});
+```
+
+The format is detected from PNG or JPEG magic bytes, not the file extension.
+Byte arrays and remaining stream data are copied when `Image` is called because
+the canvas is rendered later. A supplied stream is read from its current
+position and remains owned by the caller; TerraPDF never disposes it.
+
+Use `VectorCanvas.GetImageSizeInPoints(imageData)` when a target rectangle
+should match the natural image size. Pixel dimensions are converted at 96 DPI:
+
+```csharp
+var (width, height) = VectorCanvas.GetImageSizeInPoints(logoBytes);
+canvas.Image(logoBytes, 20, 20, width, height);
+```
+
+### Canvas image fit modes
+
+| Mode | Aspect ratio | Position | Clipping |
+|------|--------------|----------|----------|
+| `Stretch` | May distort | Fills the target | No |
+| `Contain` | Preserved | Centred inside the target | No |
+| `Cover` | Preserved | Centred over the target | Yes |
+| `CoverTopLeft` | Preserved | Anchored at the target's top-left | Yes |
+| `CropTopLeft` | Natural 96-DPI size | Anchored at the target's top-left | Yes |
+
+`Cover`, `CoverTopLeft`, and `CropTopLeft` isolate clipping with PDF graphics
+state save/restore operators. A shape or image drawn afterward is therefore not
+affected. The clipping rectangle may extend beyond the canvas; it is not
+automatically intersected with the canvas bounds.
+
+---
+
 ## Combining with Other Decorators
 
 Images participate in the full decorator chain:
