@@ -52,6 +52,10 @@ public sealed class VectorCanvas
     public static (double Width, double Height) GetImageSizeInPoints(byte[] imageData)
     {
         ArgumentNullException.ThrowIfNull(imageData);
+        // Validated here so unsupported data raises the documented ArgumentException,
+        // matching Image(byte[]); the ImageElement constructor raises
+        // NotSupportedException instead.
+        Elements.ImageElement.ValidateFormat(imageData);
         var image = new ImageElement(imageData);
         return (image.PixelSize.Width * 72d / 96d, image.PixelSize.Height * 72d / 96d);
     }
@@ -86,7 +90,16 @@ public sealed class VectorCanvas
     internal sealed record DrawPathCmd(PathDescriptor Path) : DrawCommand;
 
     internal sealed record DrawImageCmd(
-        byte[] Data, double X, double Y, double W, double H, ImageFit Fit) : DrawCommand;
+        byte[] Data, double X, double Y, double W, double H, ImageFit Fit) : DrawCommand
+    {
+        /// <summary>
+        /// The decoded image, populated by <c>CanvasElement</c> on first draw and reused
+        /// on every later replay of this command so a canvas repeated across pages
+        /// decodes its PNG once rather than once per page. Excluded from record equality
+        /// and value semantics on purpose — it is a cache, not part of the command.
+        /// </summary>
+        internal Elements.ImageElement? Decoded { get; set; }
+    }
 
     internal sealed record DrawTextCmd(
         double X, double Y, string Text, string HexColor, double FontSize,
@@ -123,8 +136,11 @@ public sealed class VectorCanvas
         if (dashPattern is null) return null;
         if (dashPattern.Length == 0 || dashPattern.Any(value => value < 0 || double.IsNaN(value) || double.IsInfinity(value)) || dashPattern.All(value => value == 0))
             throw new ArgumentException("Dash patterns must contain at least one positive, finite value.", nameof(dashPattern));
-        if (double.IsNaN(dashPhase) || double.IsInfinity(dashPhase))
-            throw new ArgumentOutOfRangeException(nameof(dashPhase));
+        // A negative phase is rejected by the PDF spec (ISO 32000-1 §8.4.3.6), which
+        // requires the dash phase to be a nonnegative number of user-space units.
+        if (!double.IsFinite(dashPhase) || dashPhase < 0)
+            throw new ArgumentOutOfRangeException(nameof(dashPhase), dashPhase,
+                "Dash phase must be a nonnegative, finite number.");
         return dashPattern.ToArray();
     }
 
@@ -136,7 +152,7 @@ public sealed class VectorCanvas
     /// to (<paramref name="x2"/>, <paramref name="y2"/>).</summary>
     /// <remarks><paramref name="dashPattern"/> contains alternating dash and gap lengths in points and is copied; <see langword="null"/> produces a solid line. <paramref name="dashPhase"/> offsets the start within that pattern.</remarks>
     /// <exception cref="ArgumentException"><paramref name="hexColor"/> is null or whitespace, or <paramref name="dashPattern"/> is empty, contains an invalid value, or contains only zeros.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is not finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is negative or not finite.</exception>
     public VectorCanvas Line(double x1, double y1, double x2, double y2,
         string hexColor = "#000000", double lineWidth = 1, double opacity = 1,
         double[]? dashPattern = null, double dashPhase = 0)
@@ -168,7 +184,7 @@ public sealed class VectorCanvas
     /// <summary>Draws a stroked (outline-only) rectangle.</summary>
     /// <remarks><paramref name="dashPattern"/> contains alternating dash and gap lengths in points and is copied; <see langword="null"/> produces a solid outline. <paramref name="dashPhase"/> offsets the start within that pattern.</remarks>
     /// <exception cref="ArgumentException"><paramref name="hexColor"/> is null or whitespace, or <paramref name="dashPattern"/> is empty, contains an invalid value, or contains only zeros.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is not finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is negative or not finite.</exception>
     public VectorCanvas StrokeRect(double x, double y, double width, double height,
         string hexColor = "#000000", double lineWidth = 1, double opacity = 1,
         double[]? dashPattern = null, double dashPhase = 0)
@@ -184,7 +200,7 @@ public sealed class VectorCanvas
     /// <summary>Draws a filled and stroked rectangle.</summary>
     /// <remarks><paramref name="dashPattern"/> contains alternating dash and gap lengths in points and is copied; <see langword="null"/> produces a solid outline. <paramref name="dashPhase"/> offsets the start within that pattern.</remarks>
     /// <exception cref="ArgumentException">Either color argument is null or whitespace, or <paramref name="dashPattern"/> is empty, contains an invalid value, or contains only zeros.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is not finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="lineWidth"/> is zero or negative, <paramref name="opacity"/> is outside [0, 1], or <paramref name="dashPhase"/> is negative or not finite.</exception>
     public VectorCanvas DrawRect(double x, double y, double width, double height,
         string fillHex = "#FFFFFF", string strokeHex = "#000000", double lineWidth = 1, double opacity = 1,
         double[]? dashPattern = null, double dashPhase = 0)

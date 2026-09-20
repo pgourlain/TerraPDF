@@ -190,7 +190,12 @@ internal sealed class CanvasElement : Element
 
     private static void DrawImage(DrawingContext ctx, VectorCanvas.DrawImageCmd ic)
     {
-        var image = new ImageElement(ic.Data);
-        image.DrawAt(ctx.Page, ctx.X + ic.X, ctx.Y + ic.Y, ic.W, ic.H, ic.Fit);
+        // Building the element decodes the whole PNG, and a command is replayed once
+        // per page the canvas lands on — a header canvas on a 500-page document would
+        // decode 500 times. The decoded element is cached on the command instead; its
+        // resource alias is registered per page by PdfPage.DrawImage, so sharing one
+        // element across pages is safe.
+        ic.Decoded ??= new ImageElement(ic.Data);
+        ic.Decoded.DrawAt(ctx.Page, ctx.X + ic.X, ctx.Y + ic.Y, ic.W, ic.H, ic.Fit);
     }
 }

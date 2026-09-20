@@ -45,6 +45,31 @@ public sealed class CanvasPieTests
     }
 
     [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    public void PieRejectsNonFiniteSweep(double sweepAngle)
+    {
+        var canvas = new VectorCanvas();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillPie(10, 20, 40, 30, 0, sweepAngle));
+        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.StrokePie(10, 20, 40, 30, sweepAngle, 90));
+    }
+
+    [Fact]
+    public void ZeroTotalPieSliceThrowsInsteadOfSubdividingForever()
+    {
+        // The realistic route to a non-finite sweep: a share of an empty total.
+        // An infinite sweep can never be consumed by the arc subdivision loop,
+        // so before this was rejected the call allocated control points until OOM.
+        var canvas = new VectorCanvas();
+        double total = 0, value = 5;
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => canvas.FillPie(50, 50, 40, 40, 0, 360 * value / total));
+    }
+
+    [Theory]
     [InlineData(15, 120)]
     [InlineData(210, 120)]
     [InlineData(180, -270)]

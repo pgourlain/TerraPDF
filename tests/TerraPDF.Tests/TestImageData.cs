@@ -17,7 +17,37 @@ internal static class TestImageData
         0xFF, 0xD9,
     ];
 
-    internal static byte[] MakePng(int width, int height, bool rgba, byte alphaValue)
+    /// <summary>
+    /// Builds an 8-bit grayscale+alpha (colour type 4) PNG, the one alpha-bearing
+    /// colour type <see cref="MakePng"/> cannot produce.
+    /// </summary>
+    internal static byte[] MakeGrayAlphaPng(int width, int height, byte grayValue, byte alphaValue) =>
+        BuildPng(width, height, colorType: 4,
+            writePixel: (buffer, offset) =>
+            {
+                buffer[offset] = grayValue;
+                buffer[offset + 1] = alphaValue;
+                return 2;
+            });
+
+    internal static byte[] MakePng(int width, int height, bool rgba, byte alphaValue) =>
+        BuildPng(width, height, colorType: rgba ? 6 : 2,
+            writePixel: (buffer, offset) =>
+            {
+                buffer[offset] = 200;
+                buffer[offset + 1] = 100;
+                buffer[offset + 2] = 50;
+                if (!rgba) return 3;
+                buffer[offset + 3] = alphaValue;
+                return 4;
+            });
+
+    /// <summary>
+    /// Writes a minimal single-IDAT PNG. <paramref name="writePixel"/> fills one pixel at
+    /// the given offset and returns how many bytes it wrote (the source bytes per pixel).
+    /// </summary>
+    private static byte[] BuildPng(int width, int height, int colorType,
+        Func<byte[], int, int> writePixel)
     {
         using var stream = new MemoryStream();
 
@@ -49,23 +79,17 @@ internal static class TestImageData
         header[6] = (byte)(height >> 8);
         header[7] = (byte)height;
         header[8] = 8;
-        header[9] = (byte)(rgba ? 6 : 2);
+        header[9] = (byte)colorType;
         WriteChunk("IHDR", header);
 
-        int bytesPerPixel = rgba ? 4 : 3;
+        int bytesPerPixel = colorType switch { 2 => 3, 4 => 2, 6 => 4, _ => 3 };
         var scanlines = new byte[height * (1 + width * bytesPerPixel)];
         int offset = 0;
         for (int y = 0; y < height; y++)
         {
-            scanlines[offset++] = 0;
+            scanlines[offset++] = 0; // filter type: None
             for (int x = 0; x < width; x++)
-            {
-                scanlines[offset++] = 200;
-                scanlines[offset++] = 100;
-                scanlines[offset++] = 50;
-                if (rgba)
-                    scanlines[offset++] = alphaValue;
-            }
+                offset += writePixel(scanlines, offset);
         }
 
         using var compressed = new MemoryStream();

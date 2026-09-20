@@ -13,6 +13,11 @@
     <None Update="small_logo.jpg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <!-- RGBA badge with a transparent ground and a soft alpha edge, used by the
+         canvas media showcase to demonstrate PNG soft-mask (/SMask) compositing. -->
+    <None Update="alpha_badge.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

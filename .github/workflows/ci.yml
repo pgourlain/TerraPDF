@@ -37,12 +37,21 @@ jobs:
       - name: Build (Release)
         run: dotnet build --no-restore -c Release
 
+      # xunit.v3 test projects are self-executing Microsoft.Testing.Platform hosts.
+      # `dotnet test` cannot drive them on the .NET 10 SDK: its "--server dotnettestcli"
+      # handshake is incompatible with the MTP version xunit.v3 ships, and the run
+      # reports "Zero tests ran". Invoking each framework's binary directly is the
+      # supported MTP path and reports TRX + Cobertura natively.
       - name: Test
         run: |
-          dotnet test --no-build -c Release \
-            --logger "trx;LogFileName=test-results.trx" \
-            --results-directory TestResults \
-            --collect:"XPlat Code Coverage"
+          for tfm in net8.0 net9.0 net10.0; do
+            echo "::group::$tfm"
+            ./tests/TerraPDF.Tests/bin/Release/$tfm/TerraPDF.Tests \
+              --report-trx --report-trx-filename "test-results-$tfm.trx" \
+              --coverage --coverage-output "coverage-$tfm.cobertura.xml" \
+              --results-directory TestResults
+            echo "::endgroup::"
+          done
 
       # Verify that the library packs cleanly on every CI run.
       # This catches missing files, bad metadata, or SourceLink errors early,
@@ -72,4 +81,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: "**/coverage.cobertura.xml"
+          path: "TestResults/**/*.cobertura.xml"

@@ -115,18 +115,28 @@ public sealed class PathDescriptor
     /// <param name="ry">Vertical radius in points.</param>
     /// <param name="startAngle">Start angle in degrees clockwise from the right-hand point.</param>
     /// <param name="sweepAngle">Signed sweep angle in degrees.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative, or any argument is not finite.</exception>
     public PathDescriptor Arc(double cx, double cy, double rx, double ry,
         double startAngle, double sweepAngle)
     {
+        // Non-finite values must be rejected before the subdivision loop below:
+        // an infinite sweep can never be reduced by `remaining -= step`, so the loop
+        // would append control points until memory ran out, and a NaN sweep would
+        // silently degenerate the arc into a bare MoveTo. A caller reaching either
+        // is usually dividing by a zero total, e.g. `360 * value / total`.
+        ThrowIfNotFinite(cx, nameof(cx));
+        ThrowIfNotFinite(cy, nameof(cy));
+        ThrowIfNotFinite(rx, nameof(rx));
+        ThrowIfNotFinite(ry, nameof(ry));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rx);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ry);
+        ThrowIfNotFinite(startAngle, nameof(startAngle));
+        ThrowIfNotFinite(sweepAngle, nameof(sweepAngle));
         if (sweepAngle == 0) return this;
 
         double start = startAngle * Math.PI / 180.0;
         double remaining = sweepAngle * Math.PI / 180.0;
         double stepLimit = Math.PI / 2;
-        double step = Math.CopySign(Math.Min(Math.Abs(remaining), stepLimit), remaining);
 
         double x = cx + rx * Math.Cos(start);
         double y = cy + ry * Math.Sin(start);
@@ -134,7 +144,7 @@ public sealed class PathDescriptor
 
         while (Math.Abs(remaining) > 1e-12)
         {
-            step = Math.CopySign(Math.Min(Math.Abs(remaining), stepLimit), remaining);
+            double step = Math.CopySign(Math.Min(Math.Abs(remaining), stepLimit), remaining);
             double end = start + step;
             double tangent = 4.0 / 3.0 * Math.Tan(step / 4.0);
             double endX = cx + rx * Math.Cos(end);
@@ -154,6 +164,13 @@ public sealed class PathDescriptor
         return this;
     }
 
+    /// <summary>Rejects NaN and ±Infinity before they can reach the emitted content stream.</summary>
+    private static void ThrowIfNotFinite(double value, string paramName)
+    {
+        if (!double.IsFinite(value))
+            throw new ArgumentOutOfRangeException(paramName, value, "Value must be a finite number.");
+    }
+
     /// <summary>
     /// Appends a closed elliptical sector by drawing an arc, connecting its end to the
     /// centre, and closing the subpath. A zero sweep adds no commands.
@@ -164,7 +181,7 @@ public sealed class PathDescriptor
     /// <param name="ry">Vertical radius in points.</param>
     /// <param name="startAngle">Start angle in degrees clockwise from the right-hand point.</param>
     /// <param name="sweepAngle">Signed sweep angle in degrees; values beyond one revolution are preserved.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="rx"/> or <paramref name="ry"/> is zero or negative, or any argument is not finite.</exception>
     public PathDescriptor Sector(double cx, double cy, double rx, double ry,
         double startAngle, double sweepAngle)
     {

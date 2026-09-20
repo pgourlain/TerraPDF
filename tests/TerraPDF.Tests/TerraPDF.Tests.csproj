@@ -3,22 +3,30 @@
   <PropertyGroup>
     <!-- Run the test suite once per supported runtime -->
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <!-- xUnit.net v3 test projects are self-executing Microsoft.Testing.Platform hosts -->
+    <OutputType>Exe</OutputType>
+    <UseAppHost>true</UseAppHost>
+    <!--
+      Make Microsoft.Testing.Platform the binary's default mode instead of the xunit
+      console runner. Load-bearing for the command line the CI workflows use: the
+      console runner does not understand the MTP report-trx or coverage options.
+
+      Note that `dotnet test` still cannot drive this project on the .NET 10 SDK:
+      its "server dotnettestcli" handshake fails against the MTP version xunit.v3
+      ships, reporting "Zero tests ran", so CI runs the test binaries directly.
+      Locally: dotnet build, then run bin/Debug/<tfm>/TerraPDF.Tests in the test project.
+    -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <IsPackable>false</IsPackable>
     <!-- Silence doc-comment warnings in test code -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk"         Version="17.11.1" />
-    <PackageReference Include="xunit"                          Version="2.9.2"   />
-    <PackageReference Include="xunit.runner.visualstudio"      Version="2.8.2"   >
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="coverlet.collector"             Version="6.0.2"   >
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <!-- Microsoft.Testing.Platform reporting extensions (replace the VSTest-only trx logger / coverlet collector) -->
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.4.1" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
   </ItemGroup>
 
   <ItemGroup>

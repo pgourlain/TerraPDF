@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.2.0] - 2026-09-20
+
 ### Added
 - Positioned PNG/JPEG images on `VectorCanvas` from file paths, byte arrays,
   and streams, with `Stretch`, `Contain`, centred or top-left `Cover`, and
@@ -18,11 +22,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Elliptical arcs and closed sectors through `PathDescriptor`, plus
   `FillPie`, `StrokePie`, and `DrawPie` canvas conveniences.
 - Native dash patterns and phases for canvas lines and stroked rectangles.
+- Canvas media showcase sample (`18_CanvasMediaShowcase.cs`) covering every
+  image fit mode, PNG soft-mask transparency, constant-alpha layering, image
+  sources and natural sizing, dash phases, pie sectors, elliptical arcs, and
+  rotated text.
 
 ### Fixed
 - PNG decoding now supports 8-bit grayscale images with alpha (colour type 4).
+- Elliptical arcs and pies reject non-finite angles instead of subdividing
+  forever; a slice of a zero total (`360 * value / total`) previously hung.
+- Rotated canvas text emits full-precision text-matrix coefficients. Small
+  angles were previously distorted (0.3° rendered as 0.57°) or dropped
+  entirely below ~0.3°, and matrix rounding rescaled glyphs by up to ~0.5%.
+- Canvas dash phases must be nonnegative, as the PDF specification requires.
+- Canvas images with a zero pixel dimension are skipped instead of writing
+  `NaN` operands into the content stream.
+- `VectorCanvas.GetImageSizeInPoints` throws the documented `ArgumentException`
+  for unsupported data instead of `NotSupportedException`, matching
+  `VectorCanvas.Image(byte[], …)`.
 
 ### Changed
+- A canvas image is decoded once and reused on every page the canvas is drawn
+  on, rather than re-decoded per page.
 - Updated `Microsoft.SourceLink.GitHub` to `10.0.401` to remove the vulnerable
   transitive `Microsoft.Build.Tasks.Git` 8.0.0 dependency.
 
@@ -639,7 +660,8 @@ happened to fall inside a spanned pair.
 - CI workflow (GitHub Actions): build, test, coverage.
 - Publish workflow (GitHub Actions): NuGet + symbols on release tag.
 
-[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/sahebansari/TerraPDF/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sahebansari/TerraPDF/compare/v1.5.1...v2.0.0

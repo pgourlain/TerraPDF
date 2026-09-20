@@ -137,6 +137,10 @@ internal sealed class ImageElement : Element
 
     internal void DrawAt(PdfPage page, double x, double y, double width, double height, ImageFit fit)
     {
+        // Same guard as Draw: a zero-dimension image still clears the magic-byte
+        // check, and dividing by it would write NaN operands into the content stream.
+        if (_imgWidth == 0 || _imgHeight == 0 || width <= 0 || height <= 0) return;
+
         double imageAspect = (double)_imgWidth / _imgHeight;
         double targetAspect = width / height;
         double drawWidth = width;

@@ -12,6 +12,7 @@ Directory.CreateDirectory(sampleDir);
 string imgDir = AppContext.BaseDirectory;          // images live next to the exe
 string headerImg = Path.Combine(imgDir, "header_logo.png");
 string smallImg = Path.Combine(imgDir, "small_logo.jpg");
+string alphaImg = Path.Combine(imgDir, "alpha_badge.png");
 
 Console.WriteLine("TerraPDF Samples - generating eighteen PDFs to Desktop...");
 Console.WriteLine();
@@ -36,7 +37,7 @@ ChildNutritionIndiaReport.Generate(Path.Combine(sampleDir, "15_child_nutrition_i
 TableSpansShowcase.Generate(Path.Combine(sampleDir, "16_table_spans_showcase.pdf"));
 FontSubsettingShowcase.Generate(Path.Combine(sampleDir, "17_font_subsetting_showcase.pdf"),
     Path.Combine(imgDir, "Fonts", "Lato-Regular.ttf"), Path.Combine(imgDir, "Fonts", "NotoSansDevanagari-Regular.ttf"));
-CanvasMediaShowcase.Generate(Path.Combine(sampleDir, "18_canvas_media_showcase.pdf"), smallImg);
+CanvasMediaShowcase.Generate(Path.Combine(sampleDir, "18_canvas_media_showcase.pdf"), smallImg, headerImg, alphaImg);
 
 Console.WriteLine();
 Console.WriteLine("Done.");

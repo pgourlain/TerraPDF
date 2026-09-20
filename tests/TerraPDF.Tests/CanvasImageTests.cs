@@ -152,6 +152,38 @@ public sealed class CanvasImageTests
     }
 
     [Fact]
+    public void ZeroDimensionImageIsSkippedInsteadOfEmittingNaN()
+    {
+        byte[] pdf = Render(canvas =>
+        {
+            canvas.Image(TestImageData.MakePng(0, 0, false, 255), 0, 0, 20, 20);
+            canvas.FillRect(0, 0, 5, 5, "#FF0000");
+        });
+        string content = PdfTestUtils.InflatedText(pdf);
+
+        Assert.DoesNotContain("NaN", content);
+        Assert.DoesNotContain(" Do", content);
+        Assert.Contains("1.0000 0.0000 0.0000 rg", content);   // later commands still draw
+    }
+
+    [Fact]
+    public void GetImageSizeInPointsRejectsUnsupportedDataWithArgumentException()
+    {
+        Assert.Throws<ArgumentNullException>(() => VectorCanvas.GetImageSizeInPoints(null!));
+        Assert.Throws<ArgumentException>(() => VectorCanvas.GetImageSizeInPoints([]));
+        Assert.Throws<ArgumentException>(() => VectorCanvas.GetImageSizeInPoints([1, 2, 3]));
+    }
+
+    [Fact]
+    public void GetImageSizeInPointsConvertsPixelsAt96Dpi()
+    {
+        var (width, height) = VectorCanvas.GetImageSizeInPoints(TestImageData.MakePng(96, 48, false, 255));
+
+        Assert.Equal(72, width, 3);
+        Assert.Equal(36, height, 3);
+    }
+
+    [Fact]
     public void NonPositiveCanvasImageDimensionsThrow()
     {
         var canvas = new VectorCanvas();

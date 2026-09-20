@@ -123,6 +123,10 @@ state save/restore operators. A shape or image drawn afterward is therefore not
 affected. The clipping rectangle may extend beyond the canvas; it is not
 automatically intersected with the canvas bounds.
 
+The `18_CanvasMediaShowcase.cs` sample renders all five modes side by side from
+one wide banner, so the difference between each is visible at a glance, together
+with soft-mask transparency and constant-alpha layering.
+
 ---
 
 ## Combining with Other Decorators

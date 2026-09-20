@@ -49,8 +49,14 @@ jobs:
       - name: Build (Release)
         run: dotnet build --no-restore -c Release
 
+      # See ci.yml: xunit.v3 projects are self-executing Microsoft.Testing.Platform
+      # hosts and `dotnet test` cannot drive them on the .NET 10 SDK, so the test
+      # binaries are run directly. This gates the NuGet push, so it must fail loudly.
       - name: Test
-        run: dotnet test --no-build -c Release
+        run: |
+          for tfm in net8.0 net9.0 net10.0; do
+            ./tests/TerraPDF.Tests/bin/Release/$tfm/TerraPDF.Tests
+          done
 
       # Ensure the Git tag (e.g. v1.2.0) matches <Version> in the .csproj (e.g. 1.2.0).
       # Prevents accidentally publishing the wrong version.

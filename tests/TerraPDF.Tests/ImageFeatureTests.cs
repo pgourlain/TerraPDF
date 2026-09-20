@@ -109,6 +109,34 @@ public sealed class ImageFeatureTests
         Assert.DoesNotContain("/SMask", Raw(pdf));
     }
 
+    [Fact]
+    public void TransparentGrayscaleAlphaPngEmitsSMask()
+    {
+        byte[] png = TestImageData.MakeGrayAlphaPng(4, 4, grayValue: 90, alphaValue: 128);
+        byte[] pdf = Build(c => c.Page(p =>
+        {
+            p.Size(PageSize.A4);
+            p.Content().Image(png, 100);
+        }));
+
+        string raw = Raw(pdf);
+        Assert.Contains("/SMask", raw);
+        Assert.Contains("/Width 4 /Height 4", raw);
+    }
+
+    [Fact]
+    public void FullyOpaqueGrayscaleAlphaPngEmitsNoSMask()
+    {
+        byte[] png = TestImageData.MakeGrayAlphaPng(4, 4, grayValue: 90, alphaValue: 255);
+        byte[] pdf = Build(c => c.Page(p =>
+        {
+            p.Size(PageSize.A4);
+            p.Content().Image(png, 100);
+        }));
+
+        Assert.DoesNotContain("/SMask", Raw(pdf));
+    }
+
     // ── Document-level deduplication ─────────────────────────────────────────
 
     [Fact]

@@ -95,7 +95,7 @@ internal sealed class PdfPage
         double pdfX = Math.Round(x, 2);
         double pdfY = Math.Round(Height - y, 2);
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{F(cos)} {F(-sin)} {F(sin)} {F(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
+            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
         _ops.Append(CultureInfo.InvariantCulture, $"({EscapeForPdfString(text)}) Tj\n");
     }
 
@@ -110,7 +110,7 @@ internal sealed class PdfPage
         double pdfX = Math.Round(x, 2);
         double pdfY = Math.Round(Height - y, 2);
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{F(cos)} {F(-sin)} {F(sin)} {F(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
+            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {F(pdfX)} {F(pdfY)} Tm\n");
         _ops.Append(EncodeIdentityHHex(text, variant));
         _ops.Append(" Tj\n");
     }
@@ -278,18 +278,7 @@ internal sealed class PdfPage
         PdfColor color, double lineWidth = 1, double opacity = 1,
         double[]? dashPattern = null, double dashPhase = 0)
     {
-        bool dashScope = dashPattern is not null;
-        if (dashScope)
-        {
-            _ops.Append("q\n");
-            _ops.Append('[');
-            for (var index = 0; index < dashPattern!.Length; index++)
-            {
-                if (index > 0) _ops.Append(' ');
-                _ops.Append(F(dashPattern[index]));
-            }
-            _ops.Append(CultureInfo.InvariantCulture, $"] {F(dashPhase)} d\n");
-        }
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         // Flip both endpoints from top-left to bottom-left origin
         double pdfY1 = Height - y1;
@@ -300,7 +289,7 @@ internal sealed class PdfPage
         _ops.Append(CultureInfo.InvariantCulture, $"{F(x2)} {F(pdfY2)} l\n");
         _ops.Append("S\n");
         EndOpacityScope(scope);
-        if (dashScope) _ops.Append("Q\n");
+        EndDashScope(dashScope);
     }
 
     /// <summary>Draws a filled rectangle (no border).</summary>
@@ -696,6 +685,20 @@ internal sealed class PdfPage
     private static string F(double d) => d.ToString("F2", CultureInfo.InvariantCulture);
     // Formats a colour component [0,1] as a 4-decimal PDF real (e.g. "0.5020")
     private static string C(double d) => d.ToString("F4", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Formats a text-matrix coefficient. Rotation cosines and sines need far more
+    /// precision than the two decimals <see cref="F"/> gives positions: at F2 a 0.3°
+    /// rotation rounds to 0.57°, anything under ~0.3° collapses to no rotation at all,
+    /// and the rounded (cos, sin) pair also rescales glyphs by up to ~0.5%.
+    /// </summary>
+    private static string M(double d)
+    {
+        double rounded = Math.Round(d, 6);
+        // sin(180°) is ~1.2e-16, which would otherwise print as "-0.000000".
+        if (rounded == 0) rounded = 0;
+        return rounded.ToString("F6", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Encodes a string for use inside a PDF literal string  ( … )  in the content stream.
