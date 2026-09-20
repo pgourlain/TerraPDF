@@ -5,10 +5,10 @@ namespace TerraPDF.Drawing;
 /// <summary>
 /// Minimal pure-C# PNG decoder that produces flat 24-bit RGB pixel data plus an
 /// optional alpha channel.
-/// Supports color types 2 (RGB), 6 (RGBA), and 3 (indexed/palette),
+/// Supports color types 2 (RGB), 4 (grayscale+alpha), 6 (RGBA), and 3 (indexed/palette),
 /// all at bit depth 8. Interlaced PNGs are not supported.
-/// Alpha is extracted only from colour type 6; indexed transparency (tRNS) is
-/// not supported and decodes as opaque.
+/// Alpha is extracted from colour types 4 and 6; indexed transparency (tRNS)
+/// is not supported and decodes as opaque.
 /// </summary>
 internal static class PngDecoder
 {
@@ -47,16 +47,16 @@ internal static class PngDecoder
             switch (chunkType)
             {
                 case "IHDR":
-                    imgWidth  = ReadBigEndianInt32(data, 0);
+                    imgWidth = ReadBigEndianInt32(data, 0);
                     imgHeight = ReadBigEndianInt32(data, 4);
-                    bitDepth  = data[8];
+                    bitDepth = data[8];
                     colorType = data[9];
                     if (bitDepth != 8)
                         throw new NotSupportedException(
                             $"PNG bit depth {bitDepth} is not supported; only 8-bit PNGs are accepted.");
-                    if (colorType != 2 && colorType != 3 && colorType != 6)
+                    if (colorType != 2 && colorType != 3 && colorType != 4 && colorType != 6)
                         throw new NotSupportedException(
-                            $"PNG color type {colorType} is not supported; use RGB (2), RGBA (6), or indexed (3).");
+                            $"PNG color type {colorType} is not supported; use RGB (2), grayscale+alpha (4), RGBA (6), or indexed (3).");
                     if (data[12] != 0) // interlace method
                         throw new NotSupportedException("Interlaced PNGs are not supported.");
                     break;
@@ -74,22 +74,22 @@ internal static class PngDecoder
                     goto parseDone;
             }
         }
-        parseDone:
+    parseDone:
 
-        width  = imgWidth;
+        width = imgWidth;
         height = imgHeight;
 
         // Concatenate all IDAT chunks into one buffer
         int totalLen = idatChunks.Sum(c => c.Length);
-        var idatAll  = new byte[totalLen];
-        int pos      = 0;
+        var idatAll = new byte[totalLen];
+        int pos = 0;
         foreach (var chunk in idatChunks) { chunk.CopyTo(idatAll, pos); pos += chunk.Length; }
 
         // Decompress: idatAll is a zlib stream (2-byte header + deflate data + 4-byte Adler32)
         // ZLibStream handles the zlib framing transparently.
         using var compressedMs = new MemoryStream(idatAll);
-        using var zlib         = new ZLibStream(compressedMs, CompressionMode.Decompress);
-        using var rawMs        = new MemoryStream();
+        using var zlib = new ZLibStream(compressedMs, CompressionMode.Decompress);
+        using var rawMs = new MemoryStream();
         zlib.CopyTo(rawMs);
         byte[] raw = rawMs.ToArray();
 
@@ -103,31 +103,32 @@ internal static class PngDecoder
     private static byte[] Unfilter(byte[] raw, int width, int height, int colorType, byte[]? palette,
         out byte[]? alpha)
     {
-        // Alpha channel is only present in RGBA (type 6); collected per pixel,
+        // Alpha channel is present in grayscale+alpha (type 4) and RGBA (type 6); collected per pixel,
         // returned as null when the image turns out to be fully opaque.
-        byte[]? alphaBytes = colorType == 6 ? new byte[width * height] : null;
+        byte[]? alphaBytes = colorType == 4 || colorType == 6 ? new byte[width * height] : null;
         bool anyTransparency = false;
 
         // Bytes per source pixel in the filtered data stream
         int srcBpp = colorType switch
         {
             2 => 3,   // RGB
+            4 => 2,   // grayscale + alpha
             6 => 4,   // RGBA
             3 => 1,   // indexed (1 byte palette index)
             _ => 3,
         };
 
         int rowStride = width * srcBpp + 1; // +1 for the filter-type byte at the start of each row
-        var rgb       = new byte[width * height * 3];
+        var rgb = new byte[width * height * 3];
         int dstOffset = 0;
 
         var prevRow = new byte[width * srcBpp]; // previous unfiltered row (all-zeros for first row)
 
         for (int y = 0; y < height; y++)
         {
-            int    rowStart = y * rowStride;
-            byte   filter   = raw[rowStart];
-            var    row      = new byte[width * srcBpp];
+            int rowStart = y * rowStride;
+            byte filter = raw[rowStart];
+            var row = new byte[width * srcBpp];
 
             // Copy raw (still-filtered) bytes into row buffer
             Buffer.BlockCopy(raw, rowStart + 1, row, 0, row.Length);
@@ -152,6 +153,15 @@ internal static class PngDecoder
                         byte a = row[x * 4 + 3];
                         alphaBytes![y * width + x] = a;
                         if (a != 0xFF) anyTransparency = true;
+                        break;
+                    case 4: // Grayscale + alpha - expand gray to RGB and collect alpha
+                        byte gray = row[x * 2];
+                        rgb[dstOffset++] = gray;
+                        rgb[dstOffset++] = gray;
+                        rgb[dstOffset++] = gray;
+                        byte grayAlpha = row[x * 2 + 1];
+                        alphaBytes![y * width + x] = grayAlpha;
+                        if (grayAlpha != 0xFF) anyTransparency = true;
                         break;
                     case 3: // Indexed - look up colour in palette
                         int pi = row[x] * 3;
@@ -188,7 +198,7 @@ internal static class PngDecoder
             case 3: // Average - predicted from floor((left + above) / 2)
                 for (int i = 0; i < row.Length; i++)
                 {
-                    int left  = i >= bpp ? row[i - bpp] : 0;
+                    int left = i >= bpp ? row[i - bpp] : 0;
                     int above = prev[i];
                     row[i] = (byte)(row[i] + (left + above) / 2);
                 }
@@ -197,8 +207,8 @@ internal static class PngDecoder
             case 4: // Paeth - predicted by the Paeth predictor function
                 for (int i = 0; i < row.Length; i++)
                 {
-                    int left      = i >= bpp ? row[i - bpp] : 0;
-                    int above     = prev[i];
+                    int left = i >= bpp ? row[i - bpp] : 0;
+                    int above = prev[i];
                     int upperLeft = i >= bpp ? prev[i - bpp] : 0;
                     row[i] = (byte)(row[i] + PaethPredictor(left, above, upperLeft));
                 }
@@ -226,12 +236,12 @@ internal static class PngDecoder
     // Paeth predictor: selects the nearest of left, above, or upper-left
     private static int PaethPredictor(int a, int b, int c)
     {
-        int p  = a + b - c;
+        int p = a + b - c;
         int pa = Math.Abs(p - a);
         int pb = Math.Abs(p - b);
         int pc = Math.Abs(p - c);
         if (pa <= pb && pa <= pc) return a;
-        if (pb <= pc)             return b;
+        if (pb <= pc) return b;
         return c;
     }
 }

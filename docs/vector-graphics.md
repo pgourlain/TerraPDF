@@ -2,8 +2,8 @@
 
 TerraPDF provides a fluent **Canvas API** for drawing vector graphics directly inside
 any layout container. You can render lines, rectangles, circles, ellipses, rounded
-rectangles, arbitrary Bézier paths, polygons, text labels, and grids — all without
-any external dependencies.
+rectangles, arbitrary Bézier paths, polygons, arcs, pie sectors, positioned images,
+rotated text labels, and grids — all without any external dependencies.
 
 ---
 
@@ -52,7 +52,8 @@ Every method returns `this` so calls can be chained.
 ### Lines
 
 ```csharp
-canvas.Line(x1, y1, x2, y2, hexColor = "#000000", lineWidth = 1, opacity = 1);
+canvas.Line(x1, y1, x2, y2, hexColor = "#000000", lineWidth = 1, opacity = 1,
+    dashPattern = null, dashPhase = 0);
 ```
 
 Draws a straight line from `(x1, y1)` to `(x2, y2)`.
@@ -60,7 +61,13 @@ Draws a straight line from `(x1, y1)` to `(x2, y2)`.
 ```csharp
 c.Line(0, 20, 300, 20, "#CCCCCC", 0.5);   // thin grey rule
 c.Line(0,  0, 150, 80, Color.Red.Medium, 2);
+c.Line(0, 60, 300, 60, dashPattern: [8, 4], dashPhase: 2);
 ```
+
+Dash arrays alternate painted and skipped lengths in points. They must contain
+at least one positive finite value and cannot contain negative values. The
+pattern is copied when the command is added. Each dashed command restores the
+PDF graphics state, so a following line remains solid.
 
 ---
 
@@ -79,6 +86,9 @@ canvas.StrokeRect(x, y, width, height, hexColor = "#000000", lineWidth = 1, opac
 canvas.DrawRect(x, y, width, height,
     fillHex = "#FFFFFF", strokeHex = "#000000", lineWidth = 1, opacity = 1);
 ```
+
+`StrokeRect` and `DrawRect` also accept trailing `dashPattern` and `dashPhase`
+arguments with the same semantics as `Line`.
 
 ```csharp
 c.FillRect  (  0, 0, 80, 50, Color.Blue.Lighten3);
@@ -150,7 +160,7 @@ c.FillEllipse(100, 40, 80, 30, Color.Purple.Lighten3);   // wide, flat ellipse
 ```csharp
 canvas.Text(text, x, y,
     hexColor = "#000000", fontSize = 12,
-    fontFamily = null, bold = false, italic = false, opacity = 1);
+    fontFamily = null, bold = false, italic = false, opacity = 1, angle = 0);
 ```
 
 Places one line of text with its **baseline** at `(x, y)` — not the top-left
@@ -162,9 +172,14 @@ matches one, otherwise through the standard-14 family it resolves to
 exactly the same resolution every other TerraPDF text API uses. `Text` draws
 one line only: no wrapping, no automatic fitting.
 
+`angle` rotates clockwise in degrees around the baseline point `(x, y)` in the
+top-left canvas coordinate system. Negative angles rotate counter-clockwise;
+values outside one revolution are accepted unchanged.
+
 ```csharp
 c.Text("Q1", 10, 100, Color.Grey.Darken2, 9);                       // axis label
 c.Text("Revenue", 10, 20, Color.Blue.Darken2, 16, bold: true);      // title
+c.Text("Vertical", 220, 80, angle: 90);                            // rotated around its baseline
 c.Text("वित्तीय रिपोर्ट", 10, 140, fontFamily: "NotoSansDevanagari"); // via a registered custom font
 ```
 
@@ -177,6 +192,46 @@ string label = "Total: $4,820";
 double w = VectorCanvas.MeasureTextWidth(label, 12, bold: true);
 c.Text(label, (canvasWidth - w) / 2, 20, bold: true);   // centred
 ```
+
+---
+
+### Positioned images
+
+```csharp
+canvas.Image(path, x, y, width, height, ImageFit.Contain);
+canvas.Image(bytes, x, y, width, height, ImageFit.Cover);
+canvas.Image(stream, x, y, width, height, ImageFit.Stretch);
+```
+
+Coordinates and dimensions are points. `Contain` centres the complete image;
+`Cover` centres and clips it; `CoverTopLeft` clips from the top-left;
+`CropTopLeft` keeps the natural 96-DPI size and clips right/bottom overflow.
+Internally, TerraPDF computes the image transformation matrix and scopes any
+clip with `q`/`Q`, so later canvas commands are unaffected. See
+[Images](images.md#positioned-images-on-a-vector-canvas) for source ownership
+and the complete fit-mode table.
+
+---
+
+### Arcs and pie sectors
+
+`PathDescriptor.Arc` appends an elliptical arc, while `Sector` connects the arc
+to its centre and closes the path. Convenience methods render sectors directly:
+
+```csharp
+canvas.FillPie(x, y, width, height, startAngle, sweepAngle, fillHex);
+canvas.StrokePie(x, y, width, height, startAngle, sweepAngle, strokeHex, lineWidth);
+canvas.DrawPie(x, y, width, height, startAngle, sweepAngle, fillHex, strokeHex, lineWidth);
+
+canvas.Path(path => path
+    .Arc(100, 60, 80, 40, startAngle: 15, sweepAngle: 220)
+    .Stroke(Color.Blue.Darken2, 2));
+```
+
+Angles start at the ellipse's right-hand point and increase clockwise. Negative
+sweeps run counter-clockwise. A zero sweep adds no path; sweeps whose absolute
+value exceeds 360 degrees retain every revolution. Arcs are split into cubic
+Bézier segments of at most 90 degrees.
 
 ---
 
@@ -243,6 +298,8 @@ These helpers append subpaths to the current descriptor:
 | `Rect(x, y, width, height)` | Rectangular subpath |
 | `Ellipse(cx, cy, rx, ry)` | Ellipse subpath (cubic Bézier approximation) |
 | `Circle(cx, cy, radius)` | Circle subpath |
+| `Arc(cx,cy,rx,ry,start,sweep)` | Append an elliptical arc |
+| `Sector(cx,cy,rx,ry,start,sweep)` | Append a closed elliptical sector |
 | `Polyline((x,y)[] points)` | Open polyline through 2+ points |
 | `Polygon((x,y)[] points)` | Closed polygon through 3+ points |
 
@@ -315,10 +372,10 @@ content.
 
 | Method | Description |
 |--------|-------------|
-| `Line(x1,y1, x2,y2, color, lw, opacity)` | Straight line |
+| `Line(x1,y1, x2,y2, color, lw, opacity, dash?, phase)` | Solid or dashed straight line |
 | `FillRect(x,y,w,h, color, opacity)` | Filled rectangle |
-| `StrokeRect(x,y,w,h, color, lw, opacity)` | Stroked rectangle |
-| `DrawRect(x,y,w,h, fill, stroke, lw, opacity)` | Filled + stroked rectangle |
+| `StrokeRect(x,y,w,h, color, lw, opacity, dash?, phase)` | Solid or dashed stroked rectangle |
+| `DrawRect(x,y,w,h, fill, stroke, lw, opacity, dash?, phase)` | Filled + solid or dashed rectangle |
 | `FillRoundedRect(x,y,w,h, r, color, opacity)` | Filled rounded rectangle |
 | `StrokeRoundedRect(x,y,w,h, r, color, lw, opacity)` | Stroked rounded rectangle |
 | `DrawRoundedRect(x,y,w,h, r, fill, stroke, lw, opacity)` | Filled + stroked rounded rect |
@@ -329,7 +386,11 @@ content.
 | `StrokeEllipse(cx,cy, rx,ry, color, lw, opacity)` | Stroked ellipse |
 | `DrawEllipse(cx,cy, rx,ry, fill, stroke, lw, opacity)` | Filled + stroked ellipse |
 | `Path(Action<PathDescriptor>)` | Arbitrary path with full Bézier support |
-| `Text(text, x,y, color, size, family, bold, italic, opacity)` | Text label, baseline at (x, y) |
+| `Image(source, x,y,w,h, fit)` | Positioned PNG/JPEG from a file, bytes, or stream |
+| `FillPie(x,y,w,h,start,sweep,fill,opacity)` | Filled elliptical sector |
+| `StrokePie(x,y,w,h,start,sweep,stroke,lw,opacity)` | Stroked elliptical sector |
+| `DrawPie(x,y,w,h,start,sweep,fill,stroke,lw,opacity)` | Filled and stroked elliptical sector |
+| `Text(text, x,y, color, size, family, bold, italic, opacity, angle)` | Rotatable text label, baseline at (x, y) |
 | `MeasureTextWidth(text, size, family, bold, italic)` (static) | Advance width for aligning/centring a label |
 | `Grid(cw, ch?, color, lw)` | Full-canvas rectangular grid |
 
@@ -346,6 +407,8 @@ content.
 | `Rect(x,y,w,h)` | Append rectangular subpath |
 | `Ellipse(cx,cy,rx,ry)` | Append ellipse subpath |
 | `Circle(cx,cy,r)` | Append circle subpath |
+| `Arc(cx,cy,rx,ry,start,sweep)` | Append elliptical arc |
+| `Sector(cx,cy,rx,ry,start,sweep)` | Append closed elliptical sector |
 | `Polyline(points[])` | Append open polyline (≥ 2 points) |
 | `Polygon(points[])` | Append closed polygon (≥ 3 points) |
 | `Fill(hexColor)` | Set fill paint |

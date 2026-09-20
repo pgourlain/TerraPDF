@@ -1,3 +1,4 @@
+using TerraPDF.Core;
 using TerraPDF.Drawing;
 using TerraPDF.Helpers;
 
@@ -21,14 +22,16 @@ internal sealed class ImageElement : Element
     // Static counter used to generate a unique PDF resource alias per ImageElement instance
     private static int _aliasCounter;
 
-    private readonly byte[]  _data;        // PNG: decoded RGB pixels | JPEG: raw file bytes
+    private readonly byte[] _data;        // PNG: decoded RGB pixels | JPEG: raw file bytes
     private readonly byte[]? _alpha;       // PNG RGBA: 8-bit alpha channel (null when opaque / JPEG)
-    private readonly int     _imgWidth;
-    private readonly int     _imgHeight;
-    private readonly string  _alias;       // PDF XObject resource name, e.g. "Im3"
-    private readonly bool    _isJpeg;
-    private readonly int     _components;  // colour component count (used to choose ColorSpace)
+    private readonly int _imgWidth;
+    private readonly int _imgHeight;
+    private readonly string _alias;       // PDF XObject resource name, e.g. "Im3"
+    private readonly bool _isJpeg;
+    private readonly int _components;  // colour component count (used to choose ColorSpace)
     private readonly double? _maxWidth;    // optional width cap in PDF points; null = fill available width
+
+    internal (int Width, int Height) PixelSize => (_imgWidth, _imgHeight);
 
     /// <param name="filePath">Path to a PNG or JPEG file.</param>
     /// <param name="width">Maximum rendered width in PDF points; null = fill available width.</param>
@@ -49,19 +52,19 @@ internal sealed class ImageElement : Element
         {
             // JPEG: read dimensions only - raw bytes are passed straight to PdfPage
             using var ms = new MemoryStream(imageData, writable: false);
-            var info    = JpegInfo.Read(ms);
-            _imgWidth   = info.Width;
-            _imgHeight  = info.Height;
+            var info = JpegInfo.Read(ms);
+            _imgWidth = info.Width;
+            _imgHeight = info.Height;
             _components = info.Components;
-            _data       = imageData;
-            _isJpeg     = true;
+            _data = imageData;
+            _isJpeg = true;
         }
         else if (IsPngData(imageData))
         {
             using var ms = new MemoryStream(imageData, writable: false);
-            _data       = PngDecoder.Decode(ms, out _imgWidth, out _imgHeight, out _alpha);
+            _data = PngDecoder.Decode(ms, out _imgWidth, out _imgHeight, out _alpha);
             _components = 3;
-            _isJpeg     = false;
+            _isJpeg = false;
         }
         else
         {
@@ -80,6 +83,14 @@ internal sealed class ImageElement : Element
 
     private static bool IsJpegData(byte[] d) =>
         d.Length >= 2 && d[0] == 0xFF && d[1] == 0xD8;
+
+    internal static void ValidateFormat(byte[] imageData)
+    {
+        if (!IsPngData(imageData) && !IsJpegData(imageData))
+            throw new ArgumentException(
+                "Image data is not a recognised PNG or JPEG (checked by magic bytes). " +
+                "Only PNG and JPEG images are supported.", nameof(imageData));
+    }
 
     // -- Sizing ----------------------------------------------------
 
@@ -122,5 +133,52 @@ internal sealed class ImageElement : Element
         ctx.Page.DrawImage(_alias, _data, _imgWidth, _imgHeight,
             ctx.X, ctx.Y, drawW, drawH,
             _isJpeg, _components, _alpha);
+    }
+
+    internal void DrawAt(PdfPage page, double x, double y, double width, double height, ImageFit fit)
+    {
+        double imageAspect = (double)_imgWidth / _imgHeight;
+        double targetAspect = width / height;
+        double drawWidth = width;
+        double drawHeight = height;
+        double drawX = x;
+        double drawY = y;
+
+        if (fit == ImageFit.Contain)
+        {
+            if (imageAspect > targetAspect)
+                drawHeight = width / imageAspect;
+            else
+                drawWidth = height * imageAspect;
+            drawX += (width - drawWidth) / 2;
+            drawY += (height - drawHeight) / 2;
+        }
+        else if (fit is ImageFit.Cover or ImageFit.CoverTopLeft or ImageFit.CropTopLeft)
+        {
+            if (fit is ImageFit.Cover or ImageFit.CoverTopLeft)
+            {
+                if (imageAspect > targetAspect)
+                    drawWidth = height * imageAspect;
+                else
+                    drawHeight = width / imageAspect;
+                if (fit == ImageFit.Cover)
+                {
+                    drawX += (width - drawWidth) / 2;
+                    drawY += (height - drawHeight) / 2;
+                }
+            }
+            else
+            {
+                drawWidth = _imgWidth * 72d / 96d;
+                drawHeight = _imgHeight * 72d / 96d;
+            }
+            page.BeginClip(x, y, width, height);
+        }
+
+        page.DrawImage(_alias, _data, _imgWidth, _imgHeight,
+            drawX, drawY, drawWidth, drawHeight, _isJpeg, _components, _alpha);
+
+        if (fit is ImageFit.Cover or ImageFit.CoverTopLeft or ImageFit.CropTopLeft)
+            page.EndClip();
     }
 }
