@@ -17,6 +17,12 @@ public sealed class PathDescriptor
     internal double LineWidth { get; private set; } = 1;
     internal bool EvenOddFill { get; private set; }
     internal double PaintOpacity { get; private set; } = 1;
+    internal double[]? DashPattern { get; private set; }
+    internal double DashPhase { get; private set; }
+    internal GradientFill? Gradient { get; private set; }
+
+    /// <summary>A two-stop gradient fill; the angle only applies to linear gradients.</summary>
+    internal sealed record GradientFill(bool Radial, string FromHex, string ToHex, double Angle);
 
     // ── Move / Line ─────────────────────────────────────────────────────────
 
@@ -69,6 +75,31 @@ public sealed class PathDescriptor
               .LineTo(x + width, y)
               .LineTo(x + width, y + height)
               .LineTo(x, y + height)
+              .Close();
+    }
+
+    /// <summary>
+    /// Appends a rounded-rectangle subpath. <paramref name="radius"/> is clamped to half the
+    /// shorter side, so the corners never overlap.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">A dimension or <paramref name="radius"/> is zero or negative.</exception>
+    public PathDescriptor RoundedRect(double x, double y, double width, double height, double radius)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(radius);
+
+        double r = Math.Min(radius, Math.Min(width, height) / 2);
+        double k = r * 0.5523;
+        return MoveTo(x + r, y)
+              .LineTo(x + width - r, y)
+              .CurveTo(x + width - r + k, y, x + width, y + r - k, x + width, y + r)
+              .LineTo(x + width, y + height - r)
+              .CurveTo(x + width, y + height - r + k, x + width - r + k, y + height, x + width - r, y + height)
+              .LineTo(x + r, y + height)
+              .CurveTo(x + r - k, y + height, x, y + height - r + k, x, y + height - r)
+              .LineTo(x, y + r)
+              .CurveTo(x, y + r - k, x + r - k, y, x + r, y)
               .Close();
     }
 
@@ -237,6 +268,7 @@ public sealed class PathDescriptor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hexColor);
         FillColor = PdfColor.FromHex(hexColor);
+        Gradient = null;
         return this;
     }
 
@@ -253,6 +285,93 @@ public sealed class PathDescriptor
         StrokeColor = PdfColor.FromHex(hexColor);
         LineWidth = lineWidth;
         return this;
+    }
+
+    /// <summary>
+    /// Fills the path with a linear two-color gradient instead of a flat color.
+    /// The gradient spans the path's bounding box; <paramref name="angle"/> is in degrees
+    /// clockwise from the left-to-right direction (0 = left to right, 90 = top to bottom).
+    /// Replaces any color set with <see cref="Fill"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">A color is null or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="angle"/> is not finite.</exception>
+    public PathDescriptor FillLinearGradient(string fromHex, string toHex, double angle = 0)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fromHex);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toHex);
+        ThrowIfNotFinite(angle, nameof(angle));
+        _ = PdfColor.FromHex(fromHex);
+        _ = PdfColor.FromHex(toHex);
+        Gradient = new GradientFill(false, fromHex, toHex, angle);
+        FillColor = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Fills the path with a radial two-color gradient centred on the path's bounding box:
+    /// <paramref name="centerHex"/> in the middle, <paramref name="edgeHex"/> at half the
+    /// larger side. Replaces any color set with <see cref="Fill"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">A color is null or whitespace.</exception>
+    public PathDescriptor FillRadialGradient(string centerHex, string edgeHex)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(centerHex);
+        ArgumentException.ThrowIfNullOrWhiteSpace(edgeHex);
+        _ = PdfColor.FromHex(centerHex);
+        _ = PdfColor.FromHex(edgeHex);
+        Gradient = new GradientFill(true, centerHex, edgeHex, 0);
+        FillColor = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Strokes the path with a dash pattern (alternating dash and gap lengths in points,
+    /// copied). Only affects the stroke; needs <see cref="Stroke"/> to be visible.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="pattern"/> is empty, has a negative or non-finite value, or only zeros.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="phase"/> is negative or not finite.</exception>
+    public PathDescriptor Dash(double[] pattern, double phase = 0)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        if (pattern.Length == 0 || pattern.Any(v => v < 0 || !double.IsFinite(v)) || pattern.All(v => v == 0))
+            throw new ArgumentException("Dash patterns must contain at least one positive, finite value.", nameof(pattern));
+        if (!double.IsFinite(phase) || phase < 0)
+            throw new ArgumentOutOfRangeException(nameof(phase), phase, "Dash phase must be a nonnegative, finite number.");
+        DashPattern = pattern.ToArray();
+        DashPhase = phase;
+        return this;
+    }
+
+    /// <summary>Bounding box of every anchor and control point, or <see langword="false"/> for an empty path.</summary>
+    internal bool TryGetBounds(out double minX, out double minY, out double maxX, out double maxY)
+    {
+        double loX = double.MaxValue, loY = double.MaxValue, hiX = double.MinValue, hiY = double.MinValue;
+        bool any = false;
+        foreach (var cmd in Commands)
+        {
+            foreach (var (x, y) in Points(cmd))
+            {
+                any = true;
+                loX = Math.Min(loX, x); hiX = Math.Max(hiX, x);
+                loY = Math.Min(loY, y); hiY = Math.Max(hiY, y);
+            }
+        }
+        (minX, minY, maxX, maxY) = (loX, loY, hiX, hiY);
+        return any;
+    }
+
+    private static IEnumerable<(double X, double Y)> Points(VectorPathCommand cmd)
+    {
+        switch (cmd)
+        {
+            case MoveToCmd m: yield return (m.X, m.Y); break;
+            case LineToCmd l: yield return (l.X, l.Y); break;
+            case CurveToCmd c:
+                yield return (c.Cx1, c.Cy1);
+                yield return (c.Cx2, c.Cy2);
+                yield return (c.X, c.Y);
+                break;
+        }
     }
 
     /// <summary>

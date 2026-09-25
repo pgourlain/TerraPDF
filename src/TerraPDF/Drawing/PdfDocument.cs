@@ -410,6 +410,13 @@ internal sealed class PdfDocument
                   " >> "
                 : string.Empty;
 
+            // Gradient fills drawn on this page, written inline as shading dictionaries.
+            string shadingDict = p.ShadingObjects.Count > 0
+                ? "/Shading << " +
+                  string.Join(" ", p.ShadingObjects.Select(kv => $"/{kv.Key} {ShadingDictionary(kv.Value)}")) +
+                  " >> "
+                : string.Empty;
+
             // Custom-font entries this page actually uses, resolved to their
             // document-wide-deduplicated Type0 object — appended alongside the
             // (unchanged) standard-font resources every page already carries.
@@ -428,7 +435,7 @@ internal sealed class PdfDocument
                 $"/MediaBox [0 0 {Inv(p.Width)} {Inv(p.Height)}] " +
                 $"/Contents {contentIds[i]} 0 R " +
                 $"{annotStr}" +
-                $"/Resources << /Font << {fontResources}{customFontResources} >> {xObjectDict}{extGStateDict}>> >>"));
+                $"/Resources << /Font << {fontResources}{customFontResources} >> {xObjectDict}{extGStateDict}{shadingDict}>> >>"));
         }
 
         // Outlines (bookmarks)
@@ -744,6 +751,21 @@ internal sealed class PdfDocument
 
         objects.Add((encId, body));
         return encId;
+    }
+
+    /// <summary>
+    /// Inline dictionary for a two-stop shading: axial (type 2) or radial (type 3), with an
+    /// exponential interpolation function (type 2, N = 1) between the two RGB colors.
+    /// </summary>
+    private static string ShadingDictionary(PdfPage.ShadingSpec s)
+    {
+        string Rgb(TerraPDF.Helpers.PdfColor c) => string.Create(CultureInfo.InvariantCulture, $"{c.R:F4} {c.G:F4} {c.B:F4}");
+        string function = $"<< /FunctionType 2 /Domain [0 1] /C0 [{Rgb(s.From)}] /C1 [{Rgb(s.To)}] /N 1 >>";
+        string coords = s.Radial
+            ? string.Create(CultureInfo.InvariantCulture, $"[{s.X0:F2} {s.Y0:F2} {s.R0:F2} {s.X1:F2} {s.Y1:F2} {s.R1:F2}]")
+            : string.Create(CultureInfo.InvariantCulture, $"[{s.X0:F2} {s.Y0:F2} {s.X1:F2} {s.Y1:F2}]");
+        return $"<< /ShadingType {(s.Radial ? 3 : 2)} /ColorSpace /DeviceRGB /Coords {coords} " +
+               $"/Function {function} /Extend [true true] >>";
     }
 
     /// <summary>Total number of descendants (children, grandchildren, …) of an outline node.</summary>
