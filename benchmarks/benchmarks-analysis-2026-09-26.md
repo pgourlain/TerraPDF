@@ -204,3 +204,71 @@ Still open:
   allocates ~26 KB per row. Profile it next: `_occupied` sets in `Table.PlaceCell` and the
   per-cell container chains are the likely remaining costs.
 - Items 6, 7, 9–13 and Phase 3.
+
+## Progress — Phase 2 (2026-09-26)
+
+Applied the rest of Phase 2: items **7, 9, 10, 11, 12, 13** (item 8 was done with Phase 1).
+Same machine and `ShortRun` job. All 569 tests pass on net8.0, net9.0 and net10.0.
+
+| Item | Change |
+|---|---|
+| 7 | RGB (type 2) and indexed (type 3) PNGs embedded without decoding: IDAT stream as `/FlateDecode` + `/DecodeParms << /Predictor 15 … >>`, palette as a separate `/Indexed` lookup stream (so encryption covers it). |
+| 9 | Same-font/size/colour tokens on a left/centre/right-aligned line share one `Tj`. Justified lines stay per word. Built-in-font runs only join printable-ASCII tokens (see finding below). |
+| 10 | `CustomFontVariant.MeasureWidth` and `PdfPage.AppendIdentityHHex` skip Devanagari shaping when the text has neither ि (U+093F) nor a virama (U+094D). |
+| 11 | Subset `glyf` table sized in a first pass and block-copied; unchanged tables referenced in place instead of copied. |
+| 12 | Content streams encoded chunk by chunk from the `StringBuilder` straight into the compressor (no `string`, no intermediate `byte[]`). |
+| 13 | Canvas QR symbol cached on the draw command. (`QrCodeElement` already merged module runs and encoded once.) |
+
+### Verification
+
+- Items 10–13 produce byte-identical PDFs for every non-encrypted sample.
+- Item 7 was checked with purpose-built RGB and indexed PNGs using all five PNG row filters
+  and several IDAT chunks, plain and encrypted: the image MuPDF decodes from the PDF is
+  pixel-identical to the source.
+- Item 9 changes the content streams. Across all samples, the extracted text is identical
+  and every glyph origin is within 0.01 pt of the previous output, except custom-font
+  (Lato) lines, which drift by at most 0.15 pt over a full line (viewer glyph-advance
+  rounding). Sample PDFs are 0.2–14% smaller.
+
+### Results (vs the original baseline)
+
+| Benchmark | Baseline | Phase 1 | Phase 2 | Alloc baseline → now |
+|---|---:|---:|---:|---:|
+| Invoice30Lines | 0.81 ms | 0.34 ms | 0.28 ms | 1.9 → 1.0 MB |
+| Invoice300Lines | 6.92 ms | 3.90 ms | 3.48 ms | 13.8 → 8.2 MB |
+| LongText 100 pages | 90.2 ms | 38.3 ms | 28.8 ms | 237 → 86 MB |
+| LongText 500 pages | 422 ms | 198 ms | 143 ms | 1,186 → 432 MB |
+| RichSpans 500 pages | 560 ms | 364 ms | 347 ms | 1,415 → 643 MB |
+| PlainTable 10,000 rows | 283 ms | 212 ms | 196 ms | 645 → 248 MB |
+| TableWithSpans 10,000 rows | 187 ms | 101 ms | 87 ms | 461 → 133 MB |
+| LatinDocument10Pages (Lato) | 15.1 ms | 11.0 ms | 8.5 ms | 28.5 → 10.2 MB |
+| DevanagariDocument10Pages | 5.7 ms | 3.3 ms | 2.7 ms | 15.7 → 4.8 MB |
+| SubsetLato | 115 µs | 114 µs | 83 µs | 938 → 302 KB |
+| Unencrypted 20 pages | 13.8 ms | 6.5 ms | 4.4 ms | 38.3 → 17.6 MB |
+| Aes256 20 pages | 15.5 ms | 8.1 ms | 6.1 ms | 41.2 → 20.4 MB |
+| RgbPngDocument ×1 (new) | – | – | 18 µs | 96 KB |
+| PngDocument ×1 (RGBA) | 12.1 ms | 4.2 ms | 4.2 ms | 32.4 → 8.2 MB |
+| Document100QrCodes | 25.0 ms | 24.5 ms | 24.5 ms | 9.2 → 4.5 MB |
+| DenseCanvas ×100 | 26.2 ms | 25.3 ms | 24.0 ms | 21.0 → 8.9 MB |
+
+An RGB PNG the size of the header logo now costs 18 µs to embed, against ~4 ms for the
+same image as RGBA, which still needs a decode and re-compression.
+
+### New finding — built-in font width tables
+
+Merging words into one `Tj` exposed a bug that already existed in `FontMetrics`: several WinAnsi
+widths above 0x7E do not match the Adobe AFM values. For Helvetica, `‘ ’` are listed as
+278 instead of 222, `“ ”` as 556 instead of 333, `•` as 278 instead of 350, and `š`/`Ž`
+are also off. In addition, characters with no WinAnsi code are measured as 500 units but
+drawn as `?` (556 in Helvetica). Positioning each word separately hid these errors
+between words, but they already skew line wrapping and the width of words that contain
+such characters. Fixing the tables changes line breaks in existing documents, so it is
+left as a separate decision. Until then, item 9 keeps such tokens on their own show op.
+
+### Still open
+
+- Correct the WinAnsi width tables and the width of unmappable characters (see above).
+  Built-in-font runs could then include all characters.
+- `PlainTable` still grows faster than linearly (×12.9 from 1,000 to 10,000 rows).
+- Item 6 (PNG decoder buffers). Now matters only for PNGs with an alpha channel.
+- Phase 3.

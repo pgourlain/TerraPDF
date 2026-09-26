@@ -248,7 +248,7 @@ internal sealed class CanvasElement : Element
 
     private static void DrawQrCode(DrawingContext ctx, VectorCanvas.DrawQrCodeCmd qr)
     {
-        var symbol = Barcodes.QrCode.QrCodeGenerator.Generate(qr.Data, qr.Level);
+        var symbol = qr.Symbol ?? Barcodes.QrCode.QrCodeGenerator.Generate(qr.Data, qr.Level);
         int n = symbol.Size;
         int totalModules = n + 2 * qr.QuietZoneModules;
         double module = qr.Size / totalModules;

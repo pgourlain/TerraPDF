@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using TerraPDF.Helpers;
@@ -80,7 +81,7 @@ internal sealed class PdfPage
     {
         string fontAlias = GetOrAddCustomFontAlias(variant);
         EmitFontColorAndPosition(fontAlias, fontSize, color, x, y);
-        _ops.Append(EncodeIdentityHHex(text, variant));
+        AppendIdentityHHex(text, variant);
         _ops.Append(" Tj\n");
     }
 
@@ -115,7 +116,7 @@ internal sealed class PdfPage
         double pdfY = Math.Round(Height - y, 2);
         _ops.Append(CultureInfo.InvariantCulture,
             $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {(pdfX):F2} {(pdfY):F2} Tm\n");
-        _ops.Append(EncodeIdentityHHex(text, variant));
+        AppendIdentityHHex(text, variant);
         _ops.Append(" Tj\n");
     }
 
@@ -156,26 +157,41 @@ internal sealed class PdfPage
     }
 
     /// <summary>
-    /// Encodes <paramref name="text"/> as an Identity-H hex string token, e.g. <c>&lt;0003001A&gt;</c>.
+    /// Appends <paramref name="text"/> as an Identity-H hex string token, e.g. <c>&lt;0003001A&gt;</c>.
     /// Codepoints are decoded and Devanagari-reordered via <see cref="TrueType.DevanagariReordering.DecodeAndReorder"/>,
     /// then mapped to glyphs (with conjunct-ligature substitution) via
     /// <see cref="TrueType.DevanagariConjuncts.MapToGlyphs"/>, so glyph order here always
     /// matches what <see cref="TrueType.CustomFontVariant.MeasureWidth"/> measured.
     /// </summary>
-    private string EncodeIdentityHHex(string text, TrueType.CustomFontVariant variant)
+    private void AppendIdentityHHex(string text, TrueType.CustomFontVariant variant)
     {
-        var codepoints = TrueType.DevanagariReordering.DecodeAndReorder(text);
-        var glyphs = TrueType.DevanagariConjuncts.MapToGlyphs(codepoints, variant.Font);
-        var sb = new StringBuilder(glyphs.Count * 4 + 2);
-        sb.Append('<');
-        foreach (var (gid, codepoint) in glyphs)
+        _ops.Append('<');
+        if (!TrueType.CustomFontVariant.NeedsShaping(text))
+        {
+            // Fast path mirroring CustomFontVariant.MeasureWidth: one glyph per scalar.
+            for (int i = 0; i < text.Length; i++)
+            {
+                int codepoint = TrueType.CustomFontVariant.NextScalar(text, ref i);
+                AppendGlyph(variant.Font.GetGlyphId(codepoint), codepoint);
+            }
+        }
+        else
+        {
+            var codepoints = TrueType.DevanagariReordering.DecodeAndReorder(text);
+            foreach (var (gid, codepoint) in TrueType.DevanagariConjuncts.MapToGlyphs(codepoints, variant.Font))
+                AppendGlyph(gid, codepoint);
+        }
+        _ops.Append('>');
+
+        void AppendGlyph(ushort gid, int codepoint)
         {
             RecordCustomGlyphUsage(variant, gid, codepoint);
-            sb.Append(gid.ToString("X4", CultureInfo.InvariantCulture));
+            _ops.Append(HexDigits[gid >> 12]).Append(HexDigits[(gid >> 8) & 0xF])
+                .Append(HexDigits[(gid >> 4) & 0xF]).Append(HexDigits[gid & 0xF]);
         }
-        sb.Append('>');
-        return sb.ToString();
     }
+
+    private const string HexDigits = "0123456789ABCDEF";
 
     /// <summary>Closes the current text object (<c>ET</c>).</summary>
     internal void EndTextObject() => _ops.Append("ET\n");
@@ -718,7 +734,33 @@ internal sealed class PdfPage
     //  Serialization
     // --------------------------------------------------------------
 
-    internal string BuildContentStream() => _ops.ToString();
+    /// <summary>
+    /// Writes the content stream to <paramref name="output"/> as Latin-1 bytes, encoding
+    /// the operator buffer chunk by chunk instead of materialising it as one string and
+    /// then one byte array.
+    /// </summary>
+    internal void WriteContentStream(Stream output)
+    {
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        try
+        {
+            foreach (var chunk in _ops.GetChunks())
+            {
+                var chars = chunk.Span;
+                while (!chars.IsEmpty)
+                {
+                    int count = Math.Min(chars.Length, buffer.Length); // Latin-1: one byte per char
+                    int bytes = Encoding.Latin1.GetBytes(chars[..count], buffer);
+                    output.Write(buffer, 0, bytes);
+                    chars = chars[count..];
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
 
     // --------------------------------------------------------------
     //  Helpers

@@ -112,6 +112,59 @@ internal static class PngDecoder
         return (width, height);
     }
 
+    /// <summary>
+    /// The still-compressed pixel data of an RGB (colour type 2) or indexed (type 3) PNG,
+    /// which a PDF viewer can decode itself: the concatenated IDAT chunks form one zlib
+    /// stream whose rows carry PNG filter bytes, i.e. exactly what <c>/FlateDecode</c> with
+    /// <c>/DecodeParms &lt;&lt; /Predictor 15 … &gt;&gt;</c> expects.
+    /// </summary>
+    internal sealed record Passthrough(int Width, int Height, int ColorType, byte[]? Palette, byte[] ZlibData);
+
+    /// <summary>
+    /// Extracts the compressed image data for embedding without decoding, or returns
+    /// <see langword="null"/> when the PNG needs decoding: colour types with an alpha
+    /// channel (4, 6) must be split into colour and a /SMask, and a palette PNG without
+    /// a valid PLTE chunk is left to <see cref="Decode"/>.
+    /// Chunk CRCs are not verified, matching <see cref="Decode"/>.
+    /// </summary>
+    internal static Passthrough? TryReadPassthrough(byte[] png)
+    {
+        var (width, height) = ReadHeader(png);
+        int colorType = png[16 + 9];
+        if (colorType != 2 && colorType != 3) return null;
+
+        byte[]? palette = null;
+        var idat = new List<(int Offset, int Length)>();
+        int total = 0;
+        int pos = 8;
+        while (pos + 8 <= png.Length)
+        {
+            int len = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(pos));
+            if (len < 0 || pos + 12 + (long)len > png.Length) return null; // truncated: let Decode report it
+            var type = png.AsSpan(pos + 4, 4);
+            int data = pos + 8;
+
+            if (type.SequenceEqual("IDAT"u8)) { idat.Add((data, len)); total += len; }
+            else if (type.SequenceEqual("PLTE"u8)) palette = png.AsSpan(data, len).ToArray();
+            else if (type.SequenceEqual("IEND"u8)) break;
+
+            pos = data + len + 4; // skip CRC
+        }
+
+        if (idat.Count == 0) return null;
+        if (colorType == 3 && (palette is null || palette.Length == 0 || palette.Length % 3 != 0 || palette.Length > 256 * 3))
+            return null;
+
+        var zlib = new byte[total];
+        int at = 0;
+        foreach (var (offset, length) in idat)
+        {
+            Buffer.BlockCopy(png, offset, zlib, at, length);
+            at += length;
+        }
+        return new Passthrough(width, height, colorType, palette, zlib);
+    }
+
     private static void ValidateHeader(int bitDepth, int colorType, int interlace)
     {
         if (bitDepth != 8)

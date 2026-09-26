@@ -16,7 +16,7 @@ in-memory stream: disk I/O is never part of the numbers.
 | `TextBenchmarks` | 10 / 100 / 500 pages of wrapped paragraphs, the same volume as per-word styled spans, and non-WinAnsi text with a built-in font |
 | `TableBenchmarks` | 100 / 1 000 / 10 000 rows: plain table with a repeating header, and a table with row and column spans |
 | `FontBenchmarks` | TrueType parsing (Lato, Noto Sans Devanagari), glyph subsetting, 10-page documents in an embedded Latin font and in Devanagari (GSUB shaping) |
-| `ImageBenchmarks` | PNG and alpha PNG decoding, documents placing the same PNG / alpha PNG / JPEG 1 and 40 times (exposes missing de-duplication) |
+| `ImageBenchmarks` | PNG and alpha PNG decoding, documents placing the same RGBA PNG / RGB PNG (embedded without decoding) / alpha PNG / JPEG 1 and 40 times |
 | `EncryptionBenchmarks` | 20-page document unencrypted vs AES-128 vs AES-256 |
 | `QrCodeBenchmarks` | QR code generation (short/long payload, ECC level L and H) |
 | `BarcodeBenchmarks` | Code128 encoding, a document with 100 QR codes |

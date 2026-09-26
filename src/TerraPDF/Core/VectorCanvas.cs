@@ -99,7 +99,15 @@ public sealed class VectorCanvas
 
     internal sealed record DrawQrCodeCmd(
         string Data, double X, double Y, double Size, QrErrorCorrectionLevel Level,
-        string Hex, string? BackgroundHex, int QuietZoneModules) : DrawCommand;
+        string Hex, string? BackgroundHex, int QuietZoneModules) : DrawCommand
+    {
+        /// <summary>
+        /// The encoded symbol, generated once when the command is recorded (which also
+        /// validates the data) and reused on every replay, so a canvas repeated across
+        /// pages does not re-encode its QR code per page.
+        /// </summary>
+        internal TerraPDF.Barcodes.QrCode.QrCode? Symbol { get; init; }
+    }
 
     internal sealed record DrawPathCmd(PathDescriptor Path) : DrawCommand;
 
@@ -659,8 +667,11 @@ public sealed class VectorCanvas
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
         ArgumentOutOfRangeException.ThrowIfNegative(quietZoneModules);
         // Fails now, at the call site, rather than later when the page is rendered.
-        _ = TerraPDF.Barcodes.QrCode.QrCodeGenerator.Generate(data, level);
-        Commands.Add(new DrawQrCodeCmd(data, x, y, size, level, hexColor, backgroundHex, quietZoneModules));
+        var symbol = TerraPDF.Barcodes.QrCode.QrCodeGenerator.Generate(data, level);
+        Commands.Add(new DrawQrCodeCmd(data, x, y, size, level, hexColor, backgroundHex, quietZoneModules)
+        {
+            Symbol = symbol,
+        });
         return this;
     }
 

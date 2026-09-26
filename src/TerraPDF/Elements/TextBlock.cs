@@ -310,33 +310,86 @@ internal sealed class TextBlock : Element
     private readonly record struct DecorationStroke(double X, double Y, double Width, PdfColor Color, double LineWidth);
 
     /// <summary>
-    /// Shows one token inside the currently open text object and queues its
-    /// underline/strikethrough strokes (graphics operators are illegal inside
-    /// <c>BT…ET</c>, so they are flushed after the text object closes).
+    /// Shows <paramref name="text"/> in <paramref name="token"/>'s font, size and colour
+    /// inside the currently open text object, starting at <paramref name="x"/>.
     /// </summary>
-    private static void DrawToken(DrawingContext ctx, in TextToken token, double x, double lineY,
+    private static void DrawText(DrawingContext ctx, in TextToken token, string text, double x, double lineY)
+    {
+        double sf = token.Style.Size ?? 12;
+        double bl = lineY + sf;
+
+        if (token.Font.IsCustom)
+            ctx.Page.ShowTextAtCustomFont(text, x, bl, sf, token.Color, token.Font.Custom!);
+        else
+            ctx.Page.ShowTextAt(text, x, bl, sf, token.Color, token.Font.StandardFamily,
+                token.Style.IsBold ?? false, token.Style.IsItalic ?? false);
+    }
+
+    /// <summary>
+    /// Queues <paramref name="token"/>'s underline/strikethrough strokes (graphics
+    /// operators are illegal inside <c>BT…ET</c>, so they are flushed after the text
+    /// object closes).
+    /// </summary>
+    private static void AddDecorations(in TextToken token, double x, double lineY,
         List<DecorationStroke> decorations)
     {
-        double sf  = token.Style.Size    ?? 12;
-        bool   sb  = token.Style.IsBold  ?? false;
-        bool   si  = token.Style.IsItalic ?? false;
-        var    sc  = token.Color;
-        var    font = token.Font;
-
+        double sf = token.Style.Size ?? 12;
         double bl = lineY + sf;
-        double tw = token.Width;
-
-        if (font.IsCustom)
-            ctx.Page.ShowTextAtCustomFont(token.Text, x, bl, sf, sc, font.Custom!);
-        else
-            ctx.Page.ShowTextAt(token.Text, x, bl, sf, sc, font.StandardFamily, sb, si);
 
         if (token.Style.IsStrikethrough ?? false)
-            decorations.Add(new DecorationStroke(x, bl - sf * 0.35, tw, sc, sf * 0.07));
+            decorations.Add(new DecorationStroke(x, bl - sf * 0.35, token.Width, token.Color, sf * 0.07));
 
         if (token.Style.IsUnderline ?? false)
-            decorations.Add(new DecorationStroke(x, bl + sf * 0.12, tw, sc, sf * 0.07));
+            decorations.Add(new DecorationStroke(x, bl + sf * 0.12, token.Width, token.Color, sf * 0.07));
     }
+
+    /// <summary>
+    /// True when <paramref name="next"/> can be appended to a run started by
+    /// <paramref name="first"/> and shown by the same Tj, i.e. the viewer will advance
+    /// through the run by exactly the widths measured here.
+    /// <para>
+    /// Custom fonts always qualify (their <c>/W</c> array carries the measured widths).
+    /// For the built-in fonts only printable ASCII does: the width tables for the
+    /// WinAnsi range above 0x7E are not exact for every glyph, and unmappable characters
+    /// are measured differently from the <c>?</c> drawn in their place, so such tokens
+    /// keep their own exactly positioned show op.
+    /// </para>
+    /// </summary>
+    /// <remarks>The caller has already checked <paramref name="first"/> itself qualifies.</remarks>
+    private static bool CanJoinRun(in TextToken first, in TextToken next) =>
+        SameTextState(first, next)
+        && (first.Font.IsCustom || IsPrintableAscii(next.Text));
+
+    private static string ConcatTexts(List<TextToken> tokens, int start, int end)
+    {
+        int length = 0;
+        for (int k = start; k < end; k++) length += tokens[k].Text.Length;
+        return string.Create(length, (tokens, start, end), static (dest, state) =>
+        {
+            for (int k = state.start; k < state.end; k++)
+            {
+                state.tokens[k].Text.AsSpan().CopyTo(dest);
+                dest = dest[state.tokens[k].Text.Length..];
+            }
+        });
+    }
+
+    private static bool IsPrintableAscii(string text) =>
+        text.AsSpan().IndexOfAnyExceptInRange(' ', '~') < 0;
+
+    /// <summary>
+    /// True when <paramref name="b"/> renders with exactly the same font, size and colour
+    /// as <paramref name="a"/>, so both can be shown by one text-showing operator.
+    /// </summary>
+    private static bool SameTextState(in TextToken a, in TextToken b) =>
+        a.Font.IsCustom == b.Font.IsCustom
+        && (a.Font.IsCustom
+            ? ReferenceEquals(a.Font.Custom, b.Font.Custom)
+            : a.Font.StandardFamily == b.Font.StandardFamily
+              && (a.Style.IsBold ?? false) == (b.Style.IsBold ?? false)
+              && (a.Style.IsItalic ?? false) == (b.Style.IsItalic ?? false))
+        && (a.Style.Size ?? 12) == (b.Style.Size ?? 12)
+        && a.Color.Equals(b.Color);
 
     // -- Draw ------------------------------------------------------
 
@@ -396,14 +449,14 @@ internal sealed class TextBlock : Element
             bool textOpen = false;
             decorations.Clear();
 
-            void Show(in TextToken token, double x)
+            void Show(in TextToken token, string text, double x)
             {
                 if (!textOpen)
                 {
                     ctx.Page.BeginTextObject();
                     textOpen = true;
                 }
-                DrawToken(ctx, token, x, curY, decorations);
+                DrawText(ctx, token, text, x, curY);
             }
 
             if (lineAlignment == TextAlignment.Justify)
@@ -416,9 +469,11 @@ internal sealed class TextBlock : Element
 
                 double curX    = ctx.X;
                 int    wordIdx = 0;
+                // Each word is positioned individually: the gaps are wider than a space.
                 foreach (var token in words)
                 {
-                    Show(token, curX);
+                    Show(token, token.Text, curX);
+                    AddDecorations(token, curX, curY, decorations);
                     curX += token.Width;
                     if (wordIdx < gapCount)
                         curX += extra;
@@ -436,11 +491,31 @@ internal sealed class TextBlock : Element
                     _                    => ctx.X,
                 };
 
-                foreach (var token in lineTokens)
+                // Consecutive tokens (words and the spaces between them) in the same font,
+                // size and colour are shown by a single Tj when the viewer's advance widths
+                // are known to equal the widths measured here (see CanJoinRun), so it lays
+                // them out exactly as one positioned word at a time would, with far fewer
+                // operators.
+                int i = 0;
+                while (i < lineTokens.Count)
                 {
-                    if (!string.IsNullOrEmpty(token.Text))
-                        Show(token, curX);
-                    curX += token.Width;
+                    var first = lineTokens[i];
+                    bool joinable = first.Font.IsCustom || IsPrintableAscii(first.Text);
+                    int end = i + 1;
+                    while (joinable && end < lineTokens.Count && CanJoinRun(first, lineTokens[end]))
+                        end++;
+
+                    double runX = curX;
+                    for (int k = i; k < end; k++)
+                    {
+                        AddDecorations(lineTokens[k], curX, curY, decorations);
+                        curX += lineTokens[k].Width;
+                    }
+
+                    string text = end == i + 1 ? first.Text : ConcatTexts(lineTokens, i, end);
+                    if (text.Length > 0)
+                        Show(first, text, runX);
+                    i = end;
                 }
             }
 

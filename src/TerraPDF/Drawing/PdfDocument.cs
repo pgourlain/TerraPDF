@@ -145,8 +145,45 @@ internal sealed class PdfDocument
                     continue;
                 }
 
-                // PNG pixels are decoded here, once per distinct image; JPEG bytes
-                // are embedded verbatim.
+                // RGB and palette PNGs are embedded still compressed: the viewer
+                // undoes the PNG row filters itself (/Predictor 15), so there is
+                // neither a decode nor a re-compression.
+                var passthrough = img.IsJpeg ? null : PngDecoder.TryReadPassthrough(img.Data);
+                if (passthrough is not null)
+                {
+                    string colorSpace = "/DeviceRGB";
+                    int colors = 3;
+                    if (passthrough.Palette is { } palette)
+                    {
+                        // Lookup table as its own stream, so encryption covers it like any stream.
+                        int paletteId = nextId++;
+                        byte[] paletteData = _encryption is not null
+                            ? _encryption.EncryptBytes(palette, paletteId, 0)
+                            : palette;
+                        binaryObjects.Add((paletteId, $"<< /Length {paletteData.Length} >>", paletteData));
+                        colorSpace = $"[/Indexed /DeviceRGB {palette.Length / 3 - 1} {paletteId} 0 R]";
+                        colors = 1;
+                    }
+
+                    int rawId = nextId++;
+                    imgMap[alias] = rawId;
+                    imageObjectByHash[key] = rawId;
+                    byte[] rawData = _encryption is not null
+                        ? _encryption.EncryptBytes(passthrough.ZlibData, rawId, 0)
+                        : passthrough.ZlibData;
+                    string rawDict =
+                        $"<< /Type /XObject /Subtype /Image " +
+                        $"/Width {img.Width} /Height {img.Height} " +
+                        $"/ColorSpace {colorSpace} /BitsPerComponent 8 " +
+                        $"/Filter /FlateDecode " +
+                        $"/DecodeParms << /Predictor 15 /Colors {colors} /BitsPerComponent 8 /Columns {img.Width} >> " +
+                        $"/Length {rawData.Length} >>";
+                    binaryObjects.Add((rawId, rawDict, rawData));
+                    continue;
+                }
+
+                // Other PNGs (alpha channel) are decoded here, once per distinct
+                // image; JPEG bytes are embedded verbatim.
                 byte[]? alpha = null;
                 byte[] pixels = img.IsJpeg ? img.Data : img.DecodePng(out alpha);
 
@@ -322,11 +359,10 @@ internal sealed class PdfDocument
         for (int pi = 0; pi < _pages.Count; pi++)
         {
             var page = _pages[pi];
-            string ops = page.BuildContentStream();
-            int cid    = nextId++;
+            int cid  = nextId++;
             contentIds.Add(cid);
 
-            byte[] compressed = Compress(enc.GetBytes(ops));
+            byte[] compressed = CompressContentStream(page);
             byte[] data = _encryption is not null
                 ? _encryption.EncryptBytes(compressed, cid, 0)
                 : compressed;
@@ -541,6 +577,18 @@ internal sealed class PdfDocument
         // Formats a page dimension for the /MediaBox array using invariant culture
         private static string Inv(double d) =>
             d.ToString("F2", CultureInfo.InvariantCulture);
+
+        // Compresses a page's content stream straight from its operator buffer; the
+        // output is identical to Compress() over the stream's Latin-1 bytes.
+        private static byte[] CompressContentStream(PdfPage page)
+        {
+            using var ms   = new MemoryStream();
+            using var zlib = new ZLibStream(ms, CompressionLevel.Optimal);
+            page.WriteContentStream(zlib);
+            zlib.Flush();
+            zlib.Dispose();
+            return ms.ToArray();
+        }
 
         // Compresses raw bytes using zlib/deflate (FlateDecode in PDF terms)
         private static byte[] Compress(byte[] data)

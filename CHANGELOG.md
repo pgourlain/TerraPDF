@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of scanning the whole table.
 - Content-stream numbers and escaped text are written straight into the page
   buffer without temporary strings.
+- RGB and palette PNGs are embedded still compressed (`/FlateDecode` with
+  `/DecodeParms /Predictor 15`, palettes as an `/Indexed` lookup stream): no
+  decode and no re-compression. PNGs with an alpha channel are still decoded to
+  split out their `/SMask`.
+- Consecutive words and spaces in the same font, size and colour are shown by a
+  single `Tj` operator instead of one positioned `Tj` per word, making sample
+  PDFs 2–14% smaller. Justified lines keep one positioned word at a time, and so
+  do built-in-font tokens outside printable ASCII, so glyph positions stay
+  within 0.01 pt of the previous output.
+- Custom-font text with no Devanagari ि or virama skips the reordering and
+  conjunct-mapping pipeline when measured and encoded.
+- Font subsetting builds the `glyf` table at its exact size and no longer copies
+  unchanged tables (≈70% fewer allocations).
+- Page content streams are compressed straight from the operator buffer.
+- Canvas QR codes are encoded once when recorded rather than on every draw.
 - New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks` (see
   `docs/benchmarks.md`).
 

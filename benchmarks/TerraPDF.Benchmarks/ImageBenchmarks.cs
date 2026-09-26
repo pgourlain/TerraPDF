@@ -8,6 +8,7 @@ namespace TerraPDF.Benchmarks;
 public class ImageBenchmarks : PdfBenchmarkBase
 {
     private byte[] _png = [];
+    private byte[] _rgbPng = [];
     private byte[] _alphaPng = [];
     private byte[] _jpg = [];
 
@@ -19,6 +20,7 @@ public class ImageBenchmarks : PdfBenchmarkBase
     public void Setup()
     {
         _png = Assets.HeaderLogoPng();
+        _rgbPng = Assets.HeaderLogoRgbPng();
         _alphaPng = Assets.AlphaBadgePng();
         _jpg = Assets.SmallLogoJpg();
     }
@@ -39,6 +41,10 @@ public class ImageBenchmarks : PdfBenchmarkBase
 
     [Benchmark]
     public long PngDocument() => Publish(Docs.Images(_png, Count));
+
+    /// <summary>Opaque RGB PNG: embedded still compressed, no decode.</summary>
+    [Benchmark]
+    public long RgbPngDocument() => Publish(Docs.Images(_rgbPng, Count));
 
     [Benchmark]
     public long AlphaPngDocument() => Publish(Docs.Images(_alphaPng, Count));
