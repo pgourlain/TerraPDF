@@ -116,6 +116,9 @@ c.StrokeRoundedRect(110, 0, 90, 50, 12, "#E87722", 2);   // r=12 outline
 c.DrawRoundedRect  (220, 10, 90, 30, 15, "#FFF", "#1A3C5E", 1); // pill
 ```
 
+`StrokeRoundedRect` and `DrawRoundedRect` also accept trailing `dashPattern`
+and `dashPhase` arguments with the same semantics as `Line`.
+
 ---
 
 ### Circles
@@ -151,7 +154,12 @@ canvas.DrawEllipse  (cx, cy, rx, ry,
 
 ```csharp
 c.FillEllipse(100, 40, 80, 30, Color.Purple.Lighten3);   // wide, flat ellipse
+c.StrokeEllipse(100, 40, 80, 30, "#1A3C5E", 1.5, dashPattern: [6, 3]);
 ```
+
+`StrokeEllipse` and `DrawEllipse` (and therefore dashed circles drawn as
+ellipses) also accept trailing `dashPattern` and `dashPhase` arguments with the
+same semantics as `Line`.
 
 ---
 
@@ -233,6 +241,76 @@ sweeps run counter-clockwise. A zero sweep adds no path; sweeps whose absolute
 value exceeds 360 degrees retain every revolution. Arcs are split into cubic
 Bézier segments of at most 90 degrees.
 
+`StrokePie` and `DrawPie` also accept trailing `dashPattern` and `dashPhase`
+arguments:
+
+```csharp
+canvas.StrokePie(0, 0, 64, 64, -90, 270, "#27AE60", 1.5, dashPattern: [8, 3, 2, 3]);
+```
+
+---
+
+### Links and bookmarks
+
+A canvas can place interactive regions at absolute positions. They draw nothing
+themselves: paint a button or label first, then lay the link over the same area.
+
+```csharp
+canvas.Link(x, y, width, height, url);                        // URI link annotation
+canvas.InternalLink(x, y, width, height, pageNumber, top?);   // GoTo link to a page of this document
+canvas.Bookmark(title, y = 0, parentTitle = null);            // outline entry for the current page
+```
+
+```csharp
+c.FillRoundedRect(0, 10, 180, 30, 6, "#2E6DA4");
+c.Text("Open the repository", 12, 29, "#FFFFFF", 9, bold: true);
+c.Link(0, 10, 180, 30, "https://github.com/sahebansari/TerraPDF");
+
+c.InternalLink(200, 10, 180, 30, pageNumber: 1);            // fits page 1 in the window
+c.InternalLink(200, 50, 180, 30, pageNumber: 3, top: 120);  // scrolls to 120 pt from the top
+
+c.Bookmark("Chapter 1");
+c.Bookmark("Section 1.1", y: 40, parentTitle: "Chapter 1");
+```
+
+- `pageNumber` is the 1-based physical page number. Rendering throws
+  `InvalidOperationException` when the document has fewer pages.
+- `top` is the distance from the top of the target page; `null` fits the page.
+- `Bookmark` points at the page the canvas is drawn on; `y` is relative to the
+  canvas and a negative value is clamped to 0. `parentTitle` nests the entry
+  under an earlier bookmark with that title. A repeated (title, parent) pair is
+  recorded once — useful for canvases repeated on every page. See also
+  [Bookmarks](bookmarks.md).
+
+---
+
+### QR codes
+
+`QrCode` draws a QR code (ISO/IEC 18004, byte mode, smallest version that fits)
+inside a square, as a single vector path — horizontal runs of dark modules are
+merged into rectangles and filled in one operation:
+
+```csharp
+canvas.QrCode(data, x, y, size,
+    level = QrErrorCorrectionLevel.M, hexColor = "#000000",
+    backgroundHex = null, quietZoneModules = 4);
+```
+
+```csharp
+c.QrCode("https://github.com/sahebansari/TerraPDF", 0, 0, 110, backgroundHex: "#FFFFFF");
+c.QrCode("TerraPDF", 130, 0, 110, QrErrorCorrectionLevel.H, hexColor: "#1A3C5E");
+c.Link(0, 0, 110, 110, "https://github.com/sahebansari/TerraPDF");   // make it clickable too
+```
+
+- `size` includes the quiet zone; the spec asks for 4 modules, lower it only
+  when the surrounding area is already light.
+- `backgroundHex = null` leaves the square transparent.
+- Data too large for a version-40 symbol at the chosen level throws
+  `NotSupportedException` when `QrCode` is called, not at render time.
+
+For a QR code placed in the layout flow instead of at a canvas position, use
+`container.QrCode(...)`.
+
 ---
 
 ### Grid helper
@@ -302,6 +380,7 @@ These helpers append subpaths to the current descriptor:
 | `Rect(x, y, width, height)` | Rectangular subpath |
 | `Ellipse(cx, cy, rx, ry)` | Ellipse subpath (cubic Bézier approximation) |
 | `Circle(cx, cy, radius)` | Circle subpath |
+| `RoundedRect(x, y, width, height, radius)` | Rounded-rectangle subpath; radius clamped to half the shorter side |
 | `Arc(cx,cy,rx,ry,start,sweep)` | Append an elliptical arc |
 | `Sector(cx,cy,rx,ry,start,sweep)` | Append a closed elliptical sector |
 | `Polyline((x,y)[] points)` | Open polyline through 2+ points |
@@ -328,8 +407,46 @@ canvas.Path(p => p
 | `.Stroke(hexColor, lineWidth = 1)` | Stroke the path outline |
 | `.UseEvenOddFill()` | Use even-odd rule (for shapes with holes, e.g. donuts) |
 | `.Opacity(opacity)` | Constant alpha for both fill and stroke (1 = opaque, default) |
+| `.Dash(pattern, phase = 0)` | Dashed stroke (same semantics as `Line`); needs `.Stroke()` |
+| `.FillLinearGradient(fromHex, toHex, angle = 0)` | Linear two-color gradient fill |
+| `.FillRadialGradient(centerHex, edgeHex)` | Radial two-color gradient fill |
 
 You can call both `.Fill()` and `.Stroke()` on the same path to fill and stroke it.
+
+```csharp
+canvas.Path(p => p
+    .RoundedRect(0, 0, 80, 56, 16)
+    .Fill("#FFFFFF")
+    .Stroke("#1A3C5E", 1.5)
+    .Dash([4, 4], phase: 2));
+```
+
+### Gradient fills
+
+`FillLinearGradient` and `FillRadialGradient` replace the flat fill with a
+two-stop PDF shading (axial type 2 or radial type 3), clipped to the path:
+
+```csharp
+// Left to right, blue to white
+canvas.Path(p => p.Rect(0, 0, 110, 70).FillLinearGradient("#2E6DA4", "#FFFFFF"));
+
+// Top to bottom, with an outline
+canvas.Path(p => p.RoundedRect(125, 0, 110, 70, 14)
+    .FillLinearGradient("#E87722", "#1A3C5E", angle: 90)
+    .Stroke("#1A3C5E", 1));
+
+// Radial: centre color in the middle, edge color at half the larger side
+canvas.Path(p => p.Circle(290, 35, 35).FillRadialGradient("#FFFFFF", "#E87722"));
+```
+
+- The gradient spans the path's bounding box. For linear gradients, `angle` is
+  in degrees clockwise from left-to-right (0 = left to right, 90 = top to
+  bottom); the two end colors land exactly on the box corners.
+- Beyond the gradient axis the end colors are extended, so the whole shape is
+  painted.
+- `.Fill(...)` and the gradient methods replace each other: the last call wins.
+- `.Stroke(...)`, `.UseEvenOddFill()`, `.Opacity(...)` and `.Dash(...)` still
+  apply. Each gradient becomes one page-level `/Shading` resource.
 
 ### Shapes with holes (even-odd fill)
 
@@ -381,21 +498,25 @@ content.
 | `StrokeRect(x,y,w,h, color, lw, opacity, dash?, phase)` | Solid or dashed stroked rectangle |
 | `DrawRect(x,y,w,h, fill, stroke, lw, opacity, dash?, phase)` | Filled + solid or dashed rectangle |
 | `FillRoundedRect(x,y,w,h, r, color, opacity)` | Filled rounded rectangle |
-| `StrokeRoundedRect(x,y,w,h, r, color, lw, opacity)` | Stroked rounded rectangle |
-| `DrawRoundedRect(x,y,w,h, r, fill, stroke, lw, opacity)` | Filled + stroked rounded rect |
+| `StrokeRoundedRect(x,y,w,h, r, color, lw, opacity, dash?, phase)` | Solid or dashed stroked rounded rectangle |
+| `DrawRoundedRect(x,y,w,h, r, fill, stroke, lw, opacity, dash?, phase)` | Filled + solid or dashed rounded rect |
 | `FillCircle(cx,cy, r, color, opacity)` | Filled circle |
 | `StrokeCircle(cx,cy, r, color, lw, opacity)` | Stroked circle |
 | `DrawCircle(cx,cy, r, fill, stroke, lw, opacity)` | Filled + stroked circle |
 | `FillEllipse(cx,cy, rx,ry, color, opacity)` | Filled ellipse |
-| `StrokeEllipse(cx,cy, rx,ry, color, lw, opacity)` | Stroked ellipse |
-| `DrawEllipse(cx,cy, rx,ry, fill, stroke, lw, opacity)` | Filled + stroked ellipse |
+| `StrokeEllipse(cx,cy, rx,ry, color, lw, opacity, dash?, phase)` | Solid or dashed stroked ellipse |
+| `DrawEllipse(cx,cy, rx,ry, fill, stroke, lw, opacity, dash?, phase)` | Filled + solid or dashed ellipse |
 | `Path(Action<PathDescriptor>)` | Arbitrary path with full Bézier support |
 | `Image(source, x,y,w,h, fit)` | Positioned PNG/JPEG from a file, bytes, or stream |
 | `FillPie(x,y,w,h,start,sweep,fill,opacity)` | Filled elliptical sector |
-| `StrokePie(x,y,w,h,start,sweep,stroke,lw,opacity)` | Stroked elliptical sector |
-| `DrawPie(x,y,w,h,start,sweep,fill,stroke,lw,opacity)` | Filled and stroked elliptical sector |
+| `StrokePie(x,y,w,h,start,sweep,stroke,lw,opacity, dash?, phase)` | Solid or dashed stroked elliptical sector |
+| `DrawPie(x,y,w,h,start,sweep,fill,stroke,lw,opacity, dash?, phase)` | Filled and solid or dashed elliptical sector |
 | `Text(text, x,y, color, size, family, bold, italic, opacity, angle)` | Rotatable text label, baseline at (x, y) |
 | `MeasureTextWidth(text, size, family, bold, italic)` (static) | Advance width for aligning/centring a label |
+| `Link(x,y,w,h, url)` | Clickable URI link area |
+| `InternalLink(x,y,w,h, page, top?)` | Clickable link to a page of the document |
+| `Bookmark(title, y, parentTitle?)` | Outline entry for the current page |
+| `QrCode(data, x,y, size, level, color, background?, quietZone)` | Vector QR code |
 | `Grid(cw, ch?, color, lw)` | Full-canvas rectangular grid |
 
 ---
@@ -411,6 +532,7 @@ content.
 | `Rect(x,y,w,h)` | Append rectangular subpath |
 | `Ellipse(cx,cy,rx,ry)` | Append ellipse subpath |
 | `Circle(cx,cy,r)` | Append circle subpath |
+| `RoundedRect(x,y,w,h,r)` | Append rounded-rectangle subpath |
 | `Arc(cx,cy,rx,ry,start,sweep)` | Append elliptical arc |
 | `Sector(cx,cy,rx,ry,start,sweep)` | Append closed elliptical sector |
 | `Polyline(points[])` | Append open polyline (≥ 2 points) |
@@ -419,6 +541,9 @@ content.
 | `Stroke(hexColor, lw)` | Set stroke paint and width |
 | `UseEvenOddFill()` | Switch to even-odd fill rule |
 | `Opacity(opacity)` | Constant alpha for fill and stroke (1 = opaque, default) |
+| `Dash(pattern, phase)` | Dashed stroke |
+| `FillLinearGradient(from, to, angle)` | Linear two-color gradient fill |
+| `FillRadialGradient(center, edge)` | Radial two-color gradient fill |
 
 ---
 
@@ -502,7 +627,7 @@ container.Canvas(canvasH, c =>
 
 ## Samples
 
-Two samples in `samples/TerraPDF.Sample/Samples/` cover the canvas API.
+Three samples in `samples/TerraPDF.Sample/Samples/` cover the canvas API.
 
 `10_VectorGraphicsShowcase.cs` demonstrates every primitive and three chart
 types across three declared pages:
@@ -523,7 +648,14 @@ Page 3  Dash patterns and phase · elliptical arcs
 Page 4  Pie sectors · rotated text labels
 ```
 
-Both are generated by the sample runner, which writes **every** sample:
+`19_CanvasExtrasShowcase.cs` covers the canvas *extras* across two pages:
+
+```
+Page 1  Dashed ellipses, rounded rects, pies and paths · linear and radial gradients
+Page 2  Hyperlinks, in-document links and bookmarks · QR codes
+```
+
+All three are generated by the sample runner, which writes **every** sample:
 
 ```sh
 cd samples/TerraPDF.Sample

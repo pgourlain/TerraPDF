@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Dash patterns and phases on canvas ellipses (`StrokeEllipse`, `DrawEllipse`),
+  rounded rectangles (`StrokeRoundedRect`, `DrawRoundedRect`), pie sectors
+  (`StrokePie`, `DrawPie`), and arbitrary paths via `PathDescriptor.Dash(...)`,
+  with the same validation and q/Q scoping as dashed lines and rectangles.
+- `PathDescriptor.RoundedRect(...)` subpath; the radius is clamped to half the
+  shorter side so the corners never overlap.
+- Linear and radial two-stop gradient fills on canvas paths
+  (`PathDescriptor.FillLinearGradient`, `PathDescriptor.FillRadialGradient`),
+  written as PDF axial (type 2) and radial (type 3) shadings clipped to the
+  path. The gradient spans the path's bounding box; outline strokes, even-odd
+  fill, opacity, and dashes still apply.
+- Canvas hyperlinks (`VectorCanvas.Link`), in-document links
+  (`VectorCanvas.InternalLink`, with an optional scroll position), and outline
+  entries (`VectorCanvas.Bookmark`, nestable by parent title) placed at
+  absolute canvas positions.
+- Canvas QR codes (`VectorCanvas.QrCode`) drawn as one filled vector path of
+  merged module runs, with an optional background and a configurable quiet
+  zone. Data too large for the chosen error-correction level fails at the call
+  site rather than at render time.
+- Canvas extras showcase sample (`19_CanvasExtrasShowcase.cs`) covering dashed
+  shapes and paths, gradients, links, bookmarks, and QR codes.
+
+
 - AI-agent toolset:
   - **`skills/terrapdf`**: an Agent Skill for coding assistants (GitHub Copilot,
     Claude Code, and others) with rules, a verified API reference, compiling

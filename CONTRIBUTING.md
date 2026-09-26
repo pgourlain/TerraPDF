@@ -130,6 +130,7 @@ Tests live in `tests/TerraPDF.Tests/` and use **xUnit**.
 | `DevanagariConjunctsTests.cs` | Unit/Integration — GSUB-driven conjunct ligature substitution (`half`/`akhn`/`cjct`/`rphf`/`rkrf`) |
 | `WordBreakTests.cs` | Integration — character-boundary breaking of a single word wider than the available line width |
 | `HeaderFirstPageOnlyTests.cs` | Integration — conditional first-page-only header rendering |
+| `CanvasExtrasTests.cs` | Unit/Integration — canvas dashes on curves, rounded-rect paths, gradient shadings, links, bookmarks, and QR codes |
 
 ### Running with coverage
 
