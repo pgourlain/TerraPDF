@@ -73,11 +73,27 @@ internal sealed class CanvasElement : Element
                 case VectorCanvas.DrawTextCmd tc:
                     DrawText(ctx, tc);
                     break;
+
+                case VectorCanvas.DrawGridCmd gc:
+                    DrawGrid(ctx, gc, ctx.Width, _height);
+                    break;
             }
         }
     }
 
     // ── Primitive renderers ─────────────────────────────────────────────────
+
+    // Interior lines only: the canvas edges are left to the caller, as before.
+    private static void DrawGrid(DrawingContext ctx, VectorCanvas.DrawGridCmd gc, double width, double height)
+    {
+        PdfColor color = PdfColor.FromHex(gc.HexColor);
+
+        for (double x = gc.CellWidth; x < width; x += gc.CellWidth)
+            ctx.Page.AddLine(ctx.X + x, ctx.Y, ctx.X + x, ctx.Y + height, color, gc.LineWidth);
+
+        for (double y = gc.CellHeight; y < height; y += gc.CellHeight)
+            ctx.Page.AddLine(ctx.X, ctx.Y + y, ctx.X + width, ctx.Y + y, color, gc.LineWidth);
+    }
 
     private static void DrawRect(DrawingContext ctx, VectorCanvas.DrawRectCmd rc)
     {

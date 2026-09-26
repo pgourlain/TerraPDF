@@ -250,9 +250,13 @@ c.Grid(20);                          // 20 × 20 pt square grid, light grey
 c.Grid(30, 20, "#E0E0E0", 0.3);     // 30 × 20 pt rectangular grid
 ```
 
-> **Note:** `Grid` reads the canvas's allocated width and height to fill the area,
-> so it must be called inside the `Canvas(height, draw)` callback (not stored and
-> called later).
+The grid is sized when the canvas is drawn, so it fills whatever width the
+layout gives the canvas, and it draws in call order: shapes added before `Grid`
+sit underneath it, and shapes added after sit on top. Only interior lines are
+drawn; add a `StrokeRect` for a border.
+
+> **TerraPDF 2.2.0 and earlier:** `Grid` drew nothing, because the canvas size was
+> not yet known when the callback ran. On those versions, draw the lines with `Line`.
 
 ---
 

@@ -147,6 +147,23 @@ Document.Create(container =>
 
 ---
 
+## Using TerraPDF with AI agents
+
+- **Coding assistants** (GitHub Copilot, Cursor, Claude Code, Codex): copy
+  [`skills/terrapdf`](https://github.com/sahebansari/TerraPDF/tree/master/skills/terrapdf)
+  into `.github/skills/` or `.claude/skills/`. It gives the assistant the
+  verified API, the rules that prevent common compile errors, and compiling
+  recipes.
+- **Agents that create PDFs at runtime**: `dotnet add package TerraPDF.Agents`
+  provides `create_pdf` tools, taking a validated JSON document, for the
+  Microsoft Agent Framework, Semantic Kernel, and `IChatClient`.
+- **Any MCP client** (Copilot, Cursor, Claude, LangChain): run
+  `dnx TerraPDF.Mcp --yes`.
+
+See [AI Agents](https://github.com/sahebansari/TerraPDF/blob/master/docs/ai-agents.md) for setup.
+
+---
+
 ## Full Documentation
 
 For complete API reference and detailed guides, visit the [docs](https://github.com/sahebansari/TerraPDF/tree/master/docs/) directory:
@@ -167,6 +184,7 @@ For complete API reference and detailed guides, visit the [docs](https://github.
 - **[Components & Templates](https://github.com/sahebansari/TerraPDF/blob/master/docs/components-and-templates.md)** — Reusable components and document templates
 - **[Metadata](https://github.com/sahebansari/TerraPDF/blob/master/docs/metadata.md)** — Document metadata (Title, Author, Subject, Keywords, Creator)
 - **[Unicode & Character Encoding](https://github.com/sahebansari/TerraPDF/blob/master/docs/unicode-and-encoding.md)** — WinAnsiEncoding and character coverage
+- **[AI Agents](https://github.com/sahebansari/TerraPDF/blob/master/docs/ai-agents.md)** — Skill for coding assistants, agent tools, and MCP server
 - **[Samples](https://github.com/sahebansari/TerraPDF/tree/master/samples)** — Complete working examples demonstrating all features
 
 ---

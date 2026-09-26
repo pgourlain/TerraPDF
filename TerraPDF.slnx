@@ -9,8 +9,11 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/TerraPDF/TerraPDF.csproj" />
+    <Project Path="src/TerraPDF.Agents/TerraPDF.Agents.csproj" />
+    <Project Path="src/TerraPDF.Mcp/TerraPDF.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/TerraPDF.Agents.Tests/TerraPDF.Agents.Tests.csproj" />
     <Project Path="tests/TerraPDF.Tests/TerraPDF.Tests.csproj" />
   </Folder>
 </Solution>

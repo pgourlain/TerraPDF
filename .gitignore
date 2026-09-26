@@ -47,3 +47,6 @@ appsettings.*.json
 
 # ── Logs ──────────────────────────────────────────────────────────
 *.log
+
+# MCP server default output
+pdf-output/

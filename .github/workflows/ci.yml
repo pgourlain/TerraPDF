@@ -44,13 +44,15 @@ jobs:
       # supported MTP path and reports TRX + Cobertura natively.
       - name: Test
         run: |
-          for tfm in net8.0 net9.0 net10.0; do
-            echo "::group::$tfm"
-            ./tests/TerraPDF.Tests/bin/Release/$tfm/TerraPDF.Tests \
-              --report-trx --report-trx-filename "test-results-$tfm.trx" \
-              --coverage --coverage-output "coverage-$tfm.cobertura.xml" \
-              --results-directory TestResults
-            echo "::endgroup::"
+          for suite in TerraPDF.Tests TerraPDF.Agents.Tests; do
+            for tfm in net8.0 net9.0 net10.0; do
+              echo "::group::$suite $tfm"
+              ./tests/$suite/bin/Release/$tfm/$suite \
+                --report-trx --report-trx-filename "test-results-$suite-$tfm.trx" \
+                --coverage --coverage-output "coverage-$suite-$tfm.cobertura.xml" \
+                --results-directory TestResults
+              echo "::endgroup::"
+            done
           done
 
       # Verify that the library packs cleanly on every CI run.
@@ -58,10 +60,12 @@ jobs:
       # well before a release is attempted.
       - name: Pack (dry run)
         run: |
-          dotnet pack src/TerraPDF/TerraPDF.csproj \
-            --no-build \
-            -c Release \
-            -o ./artifacts
+          for project in TerraPDF TerraPDF.Agents TerraPDF.Mcp; do
+            dotnet pack src/$project/$project.csproj \
+              --no-build \
+              -c Release \
+              -o ./artifacts
+          done
 
       - name: Upload package (dry-run artifact)
         uses: actions/upload-artifact@v4

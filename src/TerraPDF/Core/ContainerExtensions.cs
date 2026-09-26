@@ -648,14 +648,19 @@ public static class ContainerExtensions
 
     // -- Show-if ---------------------------------------------------
 
-    /// <summary>Renders child content only when <paramref name="condition"/> is <c>true</c>.</summary>
+    /// <summary>
+    /// Renders the content chained after this call only when <paramref name="condition"/>
+    /// is <c>true</c>. When it is <c>false</c> the slot renders nothing, and everything
+    /// chained afterwards (decorators and the element) is built but discarded.
+    /// </summary>
     public static IContainer ShowIf(this IContainer container, bool condition)
     {
-        if (!condition)
-        {
-            container.Slot().Child = new Empty();
-        }
-        return container;
+        if (condition) return container;
+
+        container.Slot().Child = new Empty();
+        // A detached container: the chain still type-checks and runs, but what it
+        // builds is never attached to the tree, so it cannot replace the Empty above.
+        return new Container();
     }
 
     // -- Page break ------------------------------------------------

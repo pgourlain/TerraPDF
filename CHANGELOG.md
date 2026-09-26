@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- AI-agent toolset:
+  - **`skills/terrapdf`**: an Agent Skill for coding assistants (GitHub Copilot,
+    Claude Code, and others) with rules, a verified API reference, compiling
+    recipes, and troubleshooting.
+  - **`TerraPDF.Agents`** (new package): `create_pdf` and
+    `get_pdf_document_format` tools that render a validated JSON document
+    (headings, paragraphs, lists, tables, key/value, callouts, columns, charts,
+    images, barcodes, and QR codes). They are exposed as `AIFunction`s for the
+    Microsoft Agent Framework, Semantic Kernel, and `IChatClient`. Errors return
+    JSON paths so models can self-correct. File output is sandboxed.
+  - **`TerraPDF.Mcp`** (new package, dotnet tool `terrapdf-mcp`): an MCP server
+    hosting the same tools plus `get_terrapdf_csharp_guide`, for Copilot,
+    Cursor, Claude, and LangChain.
+  - `AGENTS.md` and `docs/ai-agents.md`.
+
+### Fixed
+- `VectorCanvas.Grid()` drew nothing. The canvas callback runs before layout,
+  when the canvas size is still zero, so the grid is now recorded as a command
+  and sized when the canvas is drawn. It also keeps its place in the draw order.
+  `Grid` now rejects a non-positive `cellHeight` or `lineWidth`.
+- `ShowIf(false)` did not hide anything: the element chained after it replaced
+  the empty placeholder. Everything chained after `ShowIf(false)` is now
+  discarded, including headings, so they no longer reach the table of contents.
+
 ---
 
 ## [2.2.0] - 2026-09-20

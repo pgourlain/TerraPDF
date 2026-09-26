@@ -106,13 +106,65 @@ public sealed class BehaviourTests
         }))));
 
     [Fact]
-    public void ShowIfFalseProducesValidPdfWithoutContent() =>
-        Assert.Equal("%PDF-", PdfHeader(Build(c => c.Page(p =>
+    public void ShowIfFalseSuppressesTheChainedElement()
+    {
+        string content = PdfTestUtils.InflatedText(Build(c => c.Page(p =>
         {
             p.Size(PageSize.A4);
-            // ShowIf(false) should suppress content but not crash
-            p.Content().ShowIf(false).Text("Hidden");
-        }))));
+            p.Content().Column(col =>
+            {
+                col.Item().ShowIf(false).Text("Hidden");
+                col.Item().Text("Shown");
+            });
+        })));
+        Assert.DoesNotContain("(Hidden) Tj", content);
+        Assert.Contains("(Shown) Tj", content);
+    }
+
+    [Fact]
+    public void ShowIfFalseSuppressesDecoratorsAndNestedLayouts()
+    {
+        string content = PdfTestUtils.InflatedText(Build(c => c.Page(p =>
+        {
+            p.Size(PageSize.A4);
+            p.Content().Column(col =>
+            {
+                col.Item().ShowIf(false).Background("#FF0000").Padding(10).Column(inner =>
+                {
+                    inner.Item().Text("Nested hidden");
+                });
+                col.Item().Text("Shown");
+            });
+        })));
+        Assert.DoesNotContain("(Nested) Tj", content);
+        Assert.DoesNotContain("1.0000 0.0000 0.0000 rg", content);
+        Assert.Contains("(Shown) Tj", content);
+    }
+
+    [Fact]
+    public void ShowIfFalseHeadingIsNotInTableOfContents()
+    {
+        string content = PdfTestUtils.InflatedText(Build(c =>
+        {
+            c.TableOfContents();
+            c.Page(p => p.Content().Column(col =>
+            {
+                col.Item().ShowIf(false).H1("Secret chapter");
+                col.Item().H1("Public chapter");
+            }));
+        }));
+        // Text is emitted word by word; the TOC page and the body each draw the visible heading once.
+        Assert.DoesNotContain("(Secret) Tj", content);
+        Assert.Equal(2, content.Split("(Public) Tj").Length - 1);
+    }
+
+    [Fact]
+    public void ShowIfTrueRendersTheChainedElement()
+    {
+        string content = PdfTestUtils.InflatedText(Build(c => c.Page(p =>
+            p.Content().ShowIf(true).Padding(5).Text("Visible"))));
+        Assert.Contains("(Visible) Tj", content);
+    }
 
     // ── Column alignment ──────────────────────────────────────────────────
 

@@ -271,6 +271,53 @@ public sealed class VectorGraphicsTests
         Assert.Equal("%PDF-", PdfHeader(bytes));
     }
 
+    [Fact]
+    public void GridDrawsInteriorLinesAcrossTheLaidOutWidth()
+    {
+        // A4 minus 1 cm margins leaves 538.58 pt: vertical lines at 20..520 (26)
+        // and horizontal lines at 20, 40, 60, 80 (4). The canvas callback runs before
+        // layout, so this only works if the grid is sized at draw time.
+        string content = PdfTestUtils.InflatedText(CanvasPage(100, c => c.Grid(20)));
+        Assert.Equal(30, CountOccurrences(content, " l\nS\n"));
+    }
+
+    [Fact]
+    public void GridKeepsItsPositionInDrawOrder()
+    {
+        string content = PdfTestUtils.InflatedText(CanvasPage(100, c =>
+        {
+            c.FillRect(0, 0, 100, 100, "#FF0000");
+            c.Grid(50);
+            c.FillRect(0, 0, 10, 10, "#0000FF");
+        }));
+        int red = content.IndexOf("1.0000 0.0000 0.0000 rg", StringComparison.Ordinal);
+        int firstLine = content.IndexOf(" l\nS\n", StringComparison.Ordinal);
+        int blue = content.IndexOf("0.0000 0.0000 1.0000 rg", StringComparison.Ordinal);
+        Assert.True(red >= 0 && red < firstLine && firstLine < blue, "grid should draw between the two fills");
+    }
+
+    [Fact]
+    public void GridWithTallCellsDrawsOnlyVerticalLines()
+    {
+        string content = PdfTestUtils.InflatedText(CanvasPage(100, c => c.Grid(100, cellHeight: 200)));
+        Assert.Equal(5, CountOccurrences(content, " l\nS\n")); // x = 100..500
+    }
+
+    [Theory]
+    [InlineData(0, null, 0.5)]
+    [InlineData(10, 0.0, 0.5)]
+    [InlineData(10, null, 0)]
+    public void GridRejectsNonPositiveSizes(double cellWidth, double? cellHeight, double lineWidth) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new VectorCanvas().Grid(cellWidth, cellHeight, "#CCCCCC", lineWidth));
+
+    private static int CountOccurrences(string text, string value)
+    {
+        int count = 0;
+        for (int i = text.IndexOf(value, StringComparison.Ordinal); i >= 0; i = text.IndexOf(value, i + value.Length, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
+
     // ── Composition ──────────────────────────────────────────────────────────
 
     [Fact]
