@@ -21,8 +21,7 @@ internal static class Assets
     /// </summary>
     internal static byte[] HeaderLogoRgbPng()
     {
-        using var source = new MemoryStream(HeaderLogoPng());
-        byte[] rgb = TerraPDF.Drawing.PngDecoder.Decode(source, out int width, out int height, out _);
+        byte[] rgb = TerraPDF.Drawing.PngDecoder.Decode(HeaderLogoPng(), out int width, out int height, out _);
 
         var scanlines = new byte[height * (1 + width * 3)];
         for (int y = 0; y < height; y++)

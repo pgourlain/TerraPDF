@@ -16,78 +16,86 @@ internal static class PngDecoder
     private static readonly byte[] Signature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 
     /// <summary>
-    /// Decodes a PNG stream and returns a flat row-major array of RGB bytes
+    /// Decodes a PNG and returns a flat row-major array of RGB bytes
     /// (3 bytes per pixel, top-to-bottom, left-to-right).
-    /// <paramref name="alpha"/> receives one byte per pixel for RGBA images that
-    /// actually use transparency, or <c>null</c> when the image is fully opaque.
+    /// <paramref name="alpha"/> receives one byte per pixel for images with an alpha
+    /// channel that actually use transparency, or <c>null</c> when the image is fully opaque.
     /// </summary>
-    internal static byte[] Decode(Stream stream, out int width, out int height, out byte[]? alpha)
+    /// <remarks>
+    /// Allocation is limited to the decompressed image (unfiltered in place), the RGB
+    /// output and, only when some pixel is transparent, the alpha plane. IDAT chunks are
+    /// decompressed where they sit in <paramref name="png"/> rather than concatenated first.
+    /// </remarks>
+    internal static byte[] Decode(byte[] png, out int width, out int height, out byte[]? alpha)
     {
-        ValidateSignature(stream);
+        if (png.Length < 8 || !png.AsSpan(0, 8).SequenceEqual(Signature))
+            throw new InvalidDataException("Stream does not begin with a valid PNG signature.");
 
-        int imgWidth = 0, imgHeight = 0, colorType = 0, bitDepth = 0;
+        int imgWidth = 0, imgHeight = 0, colorType = 0;
         byte[]? palette = null;
-        var idatChunks = new List<byte[]>();
+        var idat = new List<(int Offset, int Length)>();
 
-        // Read chunks until IEND
-        while (true)
+        // Read chunks until IEND (or the end of the data)
+        int pos = 8;
+        while (pos + 8 <= png.Length)
         {
-            var lenBuf = new byte[4];
-            if (stream.Read(lenBuf, 0, 4) < 4) break;
-            int len = ReadBigEndianInt32(lenBuf);
+            int len = ReadBigEndianInt32(png, pos);
+            if (len < 0 || pos + 12L + len > png.Length)
+                throw new InvalidDataException("PNG chunk extends past the end of the data.");
+            var type = png.AsSpan(pos + 4, 4);
+            int data = pos + 8;
 
-            var typeBuf = new byte[4];
-            stream.ReadExactly(typeBuf, 0, 4);
-            string chunkType = System.Text.Encoding.ASCII.GetString(typeBuf);
-
-            var data = new byte[len];
-            if (len > 0) stream.ReadExactly(data, 0, len);
-            stream.ReadExactly(new byte[4], 0, 4); // skip CRC
-
-            switch (chunkType)
+            if (type.SequenceEqual("IHDR"u8))
             {
-                case "IHDR":
-                    imgWidth = ReadBigEndianInt32(data, 0);
-                    imgHeight = ReadBigEndianInt32(data, 4);
-                    bitDepth = data[8];
-                    colorType = data[9];
-                    ValidateHeader(bitDepth, colorType, data[12]);
-                    break;
-
-                case "PLTE":
-                    // Palette: 3 bytes (R, G, B) per entry
-                    palette = data;
-                    break;
-
-                case "IDAT":
-                    idatChunks.Add(data);
-                    break;
-
-                case "IEND":
-                    goto parseDone;
+                imgWidth  = ReadBigEndianInt32(png, data);
+                imgHeight = ReadBigEndianInt32(png, data + 4);
+                colorType = png[data + 9];
+                ValidateHeader(bitDepth: png[data + 8], colorType, interlace: png[data + 12]);
             }
+            else if (type.SequenceEqual("PLTE"u8))
+            {
+                // Palette: 3 bytes (R, G, B) per entry
+                palette = png.AsSpan(data, len).ToArray();
+            }
+            else if (type.SequenceEqual("IDAT"u8))
+            {
+                idat.Add((data, len));
+            }
+            else if (type.SequenceEqual("IEND"u8))
+            {
+                break;
+            }
+
+            pos = data + len + 4; // skip CRC
         }
-    parseDone:
 
         width = imgWidth;
         height = imgHeight;
 
-        // Concatenate all IDAT chunks into one buffer
-        int totalLen = idatChunks.Sum(c => c.Length);
-        var idatAll = new byte[totalLen];
-        int pos = 0;
-        foreach (var chunk in idatChunks) { chunk.CopyTo(idatAll, pos); pos += chunk.Length; }
+        int srcBpp = BytesPerPixel(colorType);
+        int stride = imgWidth * srcBpp + 1; // +1 for the filter-type byte at the start of each row
 
-        // Decompress: idatAll is a zlib stream (2-byte header + deflate data + 4-byte Adler32)
-        // ZLibStream handles the zlib framing transparently.
-        using var compressedMs = new MemoryStream(idatAll);
-        using var zlib = new ZLibStream(compressedMs, CompressionMode.Decompress);
-        using var rawMs = new MemoryStream();
-        zlib.CopyTo(rawMs);
-        byte[] raw = rawMs.ToArray();
+        // Decompress: the IDAT chunks together form one zlib stream (2-byte header +
+        // deflate data + 4-byte Adler32), read straight into a buffer of the exact size.
+        byte[] raw = new byte[(long)stride * imgHeight];
+        using (var zlib = new ZLibStream(new ChunkStream(png, idat), CompressionMode.Decompress))
+        {
+            if (zlib.ReadAtLeast(raw, raw.Length, throwOnEndOfStream: false) < raw.Length)
+                throw new InvalidDataException("PNG image data is shorter than its declared size.");
+        }
 
-        return Unfilter(raw, imgWidth, imgHeight, colorType, palette, out alpha);
+        Unfilter(raw, stride, imgHeight, srcBpp);
+        return ToRgb(raw, stride, imgWidth, imgHeight, colorType, palette, out alpha);
     }
+
+    private static int BytesPerPixel(int colorType) => colorType switch
+    {
+        2 => 3,   // RGB
+        4 => 2,   // grayscale + alpha
+        6 => 4,   // RGBA
+        3 => 1,   // indexed (1 byte palette index)
+        _ => 3,
+    };
 
     /// <summary>
     /// Reads the pixel size from the IHDR chunk without decoding any pixel data,
@@ -181,86 +189,100 @@ internal static class PngDecoder
     //  PNG row un-filtering
     // ------------------------------------------------------------
 
-    private static byte[] Unfilter(byte[] raw, int width, int height, int colorType, byte[]? palette,
-        out byte[]? alpha)
+    /// <summary>
+    /// Reverses the PNG row filters in place. Each row's filter byte stays where it is;
+    /// the previous (already unfiltered) row sits just above in the same buffer.
+    /// </summary>
+    private static void Unfilter(byte[] raw, int stride, int height, int bpp)
     {
-        // Alpha channel is present in grayscale+alpha (type 4) and RGBA (type 6); collected per pixel,
-        // returned as null when the image turns out to be fully opaque.
-        byte[]? alphaBytes = colorType == 4 || colorType == 6 ? new byte[width * height] : null;
-        bool anyTransparency = false;
-
-        // Bytes per source pixel in the filtered data stream
-        int srcBpp = colorType switch
-        {
-            2 => 3,   // RGB
-            4 => 2,   // grayscale + alpha
-            6 => 4,   // RGBA
-            3 => 1,   // indexed (1 byte palette index)
-            _ => 3,
-        };
-
-        int rowStride = width * srcBpp + 1; // +1 for the filter-type byte at the start of each row
-        var rgb = new byte[width * height * 3];
-        int dstOffset = 0;
-
-        var prevRow = new byte[width * srcBpp]; // previous unfiltered row (all-zeros for first row)
+        int rowLength = stride - 1;
+        var zeroRow = new byte[rowLength]; // the row "above" the first row is all zeros
 
         for (int y = 0; y < height; y++)
         {
-            int rowStart = y * rowStride;
-            byte filter = raw[rowStart];
-            var row = new byte[width * srcBpp];
+            int rowStart = y * stride;
+            var row  = raw.AsSpan(rowStart + 1, rowLength);
+            var prev = y == 0 ? zeroRow : raw.AsSpan(rowStart - stride + 1, rowLength);
+            ApplyInverseFilter(row, prev, raw[rowStart], bpp);
+        }
+    }
 
-            // Copy raw (still-filtered) bytes into row buffer
-            Buffer.BlockCopy(raw, rowStart + 1, row, 0, row.Length);
+    /// <summary>
+    /// Converts unfiltered rows to 24-bit RGB; for colour types 4 and 6 also extracts the
+    /// alpha plane, allocated only when at least one pixel is not fully opaque.
+    /// </summary>
+    private static byte[] ToRgb(byte[] raw, int stride, int width, int height, int colorType,
+        byte[]? palette, out byte[]? alpha)
+    {
+        bool hasAlpha = colorType == 4 || colorType == 6;
+        int srcBpp = BytesPerPixel(colorType);
+        int alphaOffset = srcBpp - 1;
 
-            // Apply the inverse of the PNG row filter in-place
-            ApplyInverseFilter(row, prevRow, filter, srcBpp);
-
-            // Convert source pixels to 24-bit RGB output
-            for (int x = 0; x < width; x++)
+        bool anyTransparency = false;
+        if (hasAlpha)
+        {
+            for (int y = 0; y < height && !anyTransparency; y++)
             {
-                switch (colorType)
+                int rowStart = y * stride + 1;
+                for (int x = 0; x < width; x++)
                 {
-                    case 2: // RGB - copy directly
-                        rgb[dstOffset++] = row[x * 3];
-                        rgb[dstOffset++] = row[x * 3 + 1];
-                        rgb[dstOffset++] = row[x * 3 + 2];
-                        break;
-                    case 6: // RGBA - RGB copied, alpha collected for a /SMask
-                        rgb[dstOffset++] = row[x * 4];
-                        rgb[dstOffset++] = row[x * 4 + 1];
-                        rgb[dstOffset++] = row[x * 4 + 2];
-                        byte a = row[x * 4 + 3];
-                        alphaBytes![y * width + x] = a;
-                        if (a != 0xFF) anyTransparency = true;
-                        break;
-                    case 4: // Grayscale + alpha - expand gray to RGB and collect alpha
-                        byte gray = row[x * 2];
-                        rgb[dstOffset++] = gray;
-                        rgb[dstOffset++] = gray;
-                        rgb[dstOffset++] = gray;
-                        byte grayAlpha = row[x * 2 + 1];
-                        alphaBytes![y * width + x] = grayAlpha;
-                        if (grayAlpha != 0xFF) anyTransparency = true;
-                        break;
-                    case 3: // Indexed - look up colour in palette
-                        int pi = row[x] * 3;
-                        rgb[dstOffset++] = palette![pi];
-                        rgb[dstOffset++] = palette![pi + 1];
-                        rgb[dstOffset++] = palette![pi + 2];
-                        break;
+                    if (raw[rowStart + x * srcBpp + alphaOffset] != 0xFF) { anyTransparency = true; break; }
                 }
             }
-
-            prevRow = row;
         }
 
-        alpha = anyTransparency ? alphaBytes : null;
+        var rgb = new byte[width * height * 3];
+        byte[]? alphaBytes = anyTransparency ? new byte[width * height] : null;
+        int dst = 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            var row = raw.AsSpan(y * stride + 1, stride - 1);
+            switch (colorType)
+            {
+                case 2: // RGB - copy directly
+                    row.CopyTo(rgb.AsSpan(dst));
+                    dst += row.Length;
+                    break;
+
+                case 6: // RGBA - RGB copied, alpha collected for a /SMask
+                    for (int x = 0, i = 0; x < width; x++, i += 4)
+                    {
+                        rgb[dst++] = row[i];
+                        rgb[dst++] = row[i + 1];
+                        rgb[dst++] = row[i + 2];
+                        alphaBytes?[y * width + x] = row[i + 3];
+                    }
+                    break;
+
+                case 4: // Grayscale + alpha - expand gray to RGB and collect alpha
+                    for (int x = 0, i = 0; x < width; x++, i += 2)
+                    {
+                        byte gray = row[i];
+                        rgb[dst++] = gray;
+                        rgb[dst++] = gray;
+                        rgb[dst++] = gray;
+                        alphaBytes?[y * width + x] = row[i + 1];
+                    }
+                    break;
+
+                case 3: // Indexed - look up colour in palette
+                    for (int x = 0; x < width; x++)
+                    {
+                        int pi = row[x] * 3;
+                        rgb[dst++] = palette![pi];
+                        rgb[dst++] = palette![pi + 1];
+                        rgb[dst++] = palette![pi + 2];
+                    }
+                    break;
+            }
+        }
+
+        alpha = alphaBytes;
         return rgb;
     }
 
-    private static void ApplyInverseFilter(byte[] row, byte[] prev, byte filter, int bpp)
+    private static void ApplyInverseFilter(Span<byte> row, ReadOnlySpan<byte> prev, byte filter, int bpp)
     {
         switch (filter)
         {
@@ -297,18 +319,50 @@ internal static class PngDecoder
         }
     }
 
+    /// <summary>
+    /// Read-only stream over the IDAT chunk payloads of a PNG, in order, so they can be
+    /// decompressed as one zlib stream without first being copied into one array.
+    /// </summary>
+    private sealed class ChunkStream(byte[] data, List<(int Offset, int Length)> chunks) : Stream
+    {
+        private int _chunk;
+        private int _posInChunk;
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            while (_chunk < chunks.Count)
+            {
+                var (chunkOffset, chunkLength) = chunks[_chunk];
+                int available = chunkLength - _posInChunk;
+                if (available > 0)
+                {
+                    int n = Math.Min(available, buffer.Length);
+                    data.AsSpan(chunkOffset + _posInChunk, n).CopyTo(buffer);
+                    _posInChunk += n;
+                    return n;
+                }
+                _chunk++;
+                _posInChunk = 0;
+            }
+            return 0;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     // ------------------------------------------------------------
     //  Helpers
     // ------------------------------------------------------------
-
-    private static void ValidateSignature(Stream stream)
-    {
-        var sig = new byte[8];
-        stream.ReadExactly(sig, 0, 8);
-        for (int i = 0; i < 8; i++)
-            if (sig[i] != Signature[i])
-                throw new InvalidDataException("Stream does not begin with a valid PNG signature.");
-    }
 
     // PNG stores multi-byte integers in big-endian order
     private static int ReadBigEndianInt32(byte[] buf, int offset = 0) =>

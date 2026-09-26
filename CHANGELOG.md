@@ -30,17 +30,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   split out their `/SMask`.
 - Consecutive words and spaces in the same font, size and colour are shown by a
   single `Tj` operator instead of one positioned `Tj` per word, making sample
-  PDFs 2–14% smaller. Justified lines keep one positioned word at a time, and so
-  do built-in-font tokens outside printable ASCII, so glyph positions stay
-  within 0.01 pt of the previous output.
+  PDFs up to 14% smaller. Justified lines keep one positioned word at a time.
 - Custom-font text with no Devanagari ि or virama skips the reordering and
   conjunct-mapping pipeline when measured and encoded.
 - Font subsetting builds the `glyf` table at its exact size and no longer copies
   unchanged tables (≈70% fewer allocations).
 - Page content streams are compressed straight from the operator buffer.
 - Canvas QR codes are encoded once when recorded rather than on every draw.
+- The PNG decoder reads the compressed data in place, decompresses into a single
+  buffer of the exact size, undoes the row filters in place, and allocates the
+  alpha plane only when a pixel is transparent: ~35% faster, ~70% less memory.
+- Much less allocation per text block and table cell: tokens share one
+  per-span format object, single-line blocks reuse their token list as the line,
+  token lists are sized exactly, rendering contexts are structs, `PdfColor`
+  implements `IEquatable<PdfColor>` (colour comparisons no longer box), and
+  hex colours and font names are resolved without allocating. Table rows now
+  allocate ~8 KB instead of ~26 KB, and text-heavy documents ~80% less.
 - New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks` (see
   `docs/benchmarks.md`).
+
+### Fixed
+- Built-in font widths now match the Adobe AFM metrics for every WinAnsi
+  character. 25 entries were wrong, among them the curly quotes, bullet,
+  `‚ „`, `š Ž Þ ß ¡` in Helvetica, `Z`, `Ž`, `š`, `ø`, `ý`, `þ`, `ÿ` in
+  Times-Bold, and `„ Œ ™ œ ¡ ¦` in Times-Italic. A test now checks every entry
+  against the AFM files.
+- Characters with no WinAnsi code (e.g. Cyrillic or CJK in a built-in font) are
+  measured as the `?` drawn in their place instead of a flat 500 units, so the
+  words after them no longer overlap.
+- Line wrapping and alignment can change slightly for text containing the
+  characters above, because they are now measured at their real width.
 
 
 ---

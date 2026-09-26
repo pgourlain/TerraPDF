@@ -71,9 +71,5 @@ internal sealed class ImageSource
     internal string ContentKey => _contentKey ??= Convert.ToHexString(SHA256.HashData(Data));
 
     /// <summary>Decodes PNG pixels to flat RGB plus an optional alpha channel (null when fully opaque).</summary>
-    internal byte[] DecodePng(out byte[]? alpha)
-    {
-        using var ms = new MemoryStream(Data, writable: false);
-        return PngDecoder.Decode(ms, out _, out _, out alpha);
-    }
+    internal byte[] DecodePng(out byte[]? alpha) => PngDecoder.Decode(Data, out _, out _, out alpha);
 }

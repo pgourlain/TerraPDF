@@ -1,7 +1,42 @@
 # Benchmark analysis — 2026-09-26
 
 First run of the `TerraPDF.Benchmarks` suite (see [docs/benchmarks.md](../docs/benchmarks.md)),
-the hotspots it revealed, their root causes in the code, and a prioritised plan to fix them.
+the hotspots it revealed, their root causes in the code, a prioritised plan to fix them, and
+the results of Phases 1 and 2 and of the follow-up work (plans A, B and C).
+
+## Status summary
+
+| Item | Topic | Status |
+|---|---|---|
+| Phase 0 | Baseline, 5/150-page variants, output-equivalence check | Partly done: equivalence checks were run with ad-hoc scripts (see [Verification tools](#verification-tools)); the page-count variants and a committed baseline are still to do |
+| 1 | PNG decoded once per placement | Done (Phase 1) |
+| 2 | Double layout pass | Done (Phase 1) |
+| 3 | Token widths recomputed | Done (Phase 1) |
+| 4 | Layout recomputed on every measure/draw | Done (Phase 1) |
+| 5 | Per-operand string allocations | Done (Phase 1) |
+| 6 | PNG decoder buffers | Done ([plan C](#c-png-decoder-buffers-item-6)) |
+| 7 | PNG passthrough | Done (Phase 2) |
+| 8 | Quadratic table slice drawing | Done (Phase 1) |
+| 9 | One `Tj` per run | Done (Phase 2; ASCII-only limit for built-in fonts lifted by [plan A](#a-built-in-font-width-tables)) |
+| 10 | Custom-font fast path | Done (Phase 2) |
+| 11 | Subsetting buffers | Done (Phase 2) |
+| 12 | Content-stream copies | Done (Phase 2) |
+| 13 | QR codes | Done (Phase 2); the per-module finding turned out to be wrong, see Findings |
+| – | Built-in font width tables (found in Phase 2) | Done ([plan A](#a-built-in-font-width-tables)); changes output on purpose |
+| – | Table allocations / GC pressure | Done ([plan B](#b-table-allocations-and-gc-pressure)); scaling at 10,000 rows limited by the document model, see [Progress — plans A, B, C](#progress--plans-a-b-c-2026-09-26) |
+| Phase 3 | Parallel compression, streaming output, compression option, parallel rendering | Open, see [plan D](#d-phase-3) |
+
+### Headline results (baseline → now)
+
+| Benchmark | Time | Allocated |
+|---|---:|---:|
+| Invoice30Lines | 0.81 → 0.20 ms (−75%) | 1.9 MB → 390 KB |
+| LongText 500 pages | 422 → 67 ms (−84%) | 1,186 → 89 MB |
+| PlainTable 10,000 rows | 283 → 112 ms (−60%) | 645 → 79 MB |
+| TableWithSpans 10,000 rows | 187 → 39 ms (−79%) | 461 → 40 MB |
+| LatinDocument10Pages (Lato) | 15.1 → 6.9 ms (−54%) | 28.5 → 3.1 MB |
+| PngDocument ×40 | 93.9 → 3.6 ms (−96%) | 323 → 2.6 MB |
+| Unencrypted 20 pages | 13.8 → 1.5 ms (−89%) | 38.3 → 3.6 MB |
 
 ## Environment
 
@@ -97,20 +132,20 @@ the hotspots it revealed, their root causes in the code, and a prioritised plan 
 | Text | ~2.4 MB allocated per page of plain paragraphs. | Word widths recomputed 4–5× per token; line layout recomputed on every `Measure` and on `Draw`; per-token string/`StringBuilder` allocations when emitting PDF operators. |
 | Tables | ~64 KB per row; time grows ×8.8 (100→1k rows) then ×13.7 (1k→10k rows). | Row heights computed up to 3×; `DrawRows` scans *all* cells of the table for every page slice (quadratic in rows × pages). |
 | Custom fonts | Lato document 2× slower and 50% more allocation than built-in font. `SubsetLato` allocates 938 KB, mostly LOH. | `CustomFontVariant.MeasureWidth` always runs Devanagari reordering + conjunct mapping (list allocations), multiplied by the repeated width measurement. Subsetting grows buffers instead of sizing them. |
-| QR codes | ~250 µs / 94 KB per QR inside a document vs ~62 µs to generate. | One rectangle operator per module. |
+| QR codes | ~250 µs / 94 KB per QR inside a document vs ~62 µs to generate. | ~~One rectangle operator per module.~~ *Correction (Phase 2):* `QrCodeElement` already merges module runs and encodes once. Only canvas QR codes re-encoded on every draw. The rest of the per-QR cost is ordinary layout and drawing (row of five cells per QR row). |
 | Layout passes | (not directly benchmarked yet) | The initial page-count hint is 99, so any document with 1–9 or ≥100 pages is laid out a second time — even without page-number spans. |
 | Encryption | +3% (AES-128), +12% (AES-256). | Acceptable; no action needed. |
 
 ## Improvement plan
 
-### Phase 0 — Reliable baseline (½ day)
+### Phase 0 — Reliable baseline (½ day) — *partly done*
 
 - Re-run the full suite with the default job and store the JSON under `perf/baseline/`.
 - Add `LongText` variants at **5** and **150** pages to expose the double-layout issue (item 2).
 - Add an output-equivalence check (content streams decompressed, ignoring `/ID` and dates, or
   `pdftoppm` rendering diff) so optimisations can be proven not to change output.
 
-### Phase 1 — Quick wins (low risk, high impact)
+### Phase 1 — Quick wins (low risk, high impact) — *done except item 6*
 
 | # | Problem | Fix | Where | Expected gain |
 |---|---|---|---|---|
@@ -121,7 +156,7 @@ the hotspots it revealed, their root causes in the code, and a prioritised plan 
 | 5 | `F()` / `C()` format through `ToString("F2")`; `EscapeForPdfString` allocates a `StringBuilder` per token; `PdfColor.FromHex` per token | Format numbers directly into the content buffer (`ISpanFormattable`); escape straight into `_ops`; parse colours once per style | `src/TerraPDF/Drawing/PdfPage.cs:734`, `src/TerraPDF/Drawing/PdfPage.cs:768` | fewer allocations on every document |
 | 6 | `PngDecoder` allocates a new row buffer per scanline, concatenates IDAT chunks via `List<byte[]>`, decompresses via `MemoryStream.ToArray()` | Reuse two row buffers; decompress into a pre-sized buffer (`height × stride`) | `src/TerraPDF/Drawing/PngDecoder.cs:125` | `DecodePng` 8.1 MB → ~3 MB |
 
-### Phase 2 — Structural (medium risk)
+### Phase 2 — Structural (medium risk) — *done*
 
 7. **PNG passthrough**: for non-alpha RGB / gray / indexed PNGs, embed the IDAT stream as-is with
    `/DecodeParms << /Predictor 15 /Colors n /BitsPerComponent 8 /Columns w >>` (and an `/Indexed`
@@ -141,7 +176,7 @@ the hotspots it revealed, their root causes in the code, and a prioritised plan 
 13. **QR codes**: merge horizontal module runs into single rectangles; cache the generated QR matrix
     on the element.
 
-### Phase 3 — Optional
+### Phase 3 — Optional — *open, see [plan D](#d-phase-3)*
 
 - Parallel per-page content building and compression after layout (requires auditing shared state:
   image alias counter, custom-font glyph usage merging).
@@ -199,11 +234,7 @@ the changes.
 Micro-benchmarks of untouched code (PNG decoder, font parsing/subsetting, QR and Code128
 encoding) are unchanged, as expected.
 
-Still open:
-- `PlainTable` still grows faster than linearly (×13 from 1,000 to 10,000 rows) and
-  allocates ~26 KB per row. Profile it next: `_occupied` sets in `Table.PlaceCell` and the
-  per-cell container chains are the likely remaining costs.
-- Items 6, 7, 9–13 and Phase 3.
+Still open at that point: items 6, 7, 9–13 and Phase 3 (7 and 9–13 were done in Phase 2).
 
 ## Progress — Phase 2 (2026-09-26)
 
@@ -265,10 +296,242 @@ between words, but they already skew line wrapping and the width of words that c
 such characters. Fixing the tables changes line breaks in existing documents, so it is
 left as a separate decision. Until then, item 9 keeps such tokens on their own show op.
 
+## Plan for the remaining work
+
+### Table allocations: diagnosis
+
+GC columns of `TableBenchmarks` after Phase 2:
+
+| Benchmark | Rows | Mean | Gen0 | Gen1 | Gen2 | Allocated |
+|---|---:|---:|---:|---:|---:|---:|
+| PlainTable | 100 | 0.94 ms | 321 | 143 | – | 2.6 MB |
+| PlainTable | 1,000 | 15.2 ms | 3,406 | 1,313 | 547 | 24.8 MB |
+| PlainTable | 10,000 | 196 ms | 32,000 | 13,000 | 2,000 | 248 MB |
+
+(GC counts are per 1,000 operations.) Allocation grows linearly at ≈25 KB per row (≈6 KB
+per cell), but time grows faster: from 1,000 rows, a large share of that garbage survives
+into Gen1/Gen2 because the element tree and its cached layouts stay alive for the whole
+publish. The remaining table cost is therefore allocation volume and GC promotion, not
+an algorithm that scales badly.
+
+### A. Built-in font width tables
+
+The WinAnsi widths above 0x7E are wrong for several glyphs, and unmappable characters are
+measured differently from the `?` drawn in their place (see the Phase 2 finding).
+
+1. Generate the six width arrays in `src/TerraPDF/Drawing/FontMetrics.cs` from the official
+   Core-14 AFM files with a script (WinAnsi code → glyph name → `WX`), kept under `tools/` so
+   the tables can be regenerated rather than hand-edited.
+2. In `FontMetrics.MeasureWidth`, measure characters without a WinAnsi code as `?` in the
+   current font, since that is what is drawn. Do the same for DEL and the undefined codes
+   0x81, 0x8D, 0x8F, 0x90 and 0x9D.
+3. Add a test that checks every table entry against the AFM data.
+4. Remove the printable-ASCII gate in `TextBlock.CanJoinRun`, so built-in-font runs join all
+   characters.
+5. Verify every sample, including 11 (Unicode) and 14 (the `???` lines), with the
+   glyph-position check: ≤ 0.01 pt shift. Where the corrected widths change line wrapping,
+   check the new line breaks visually.
+6. CHANGELOG "Fixed" entry saying line wrapping may change for text with curly quotes,
+   bullets, dashes, `€` or unmappable characters. Ship it in a minor version bump.
+
+Effort ½ day. Output changes on purpose.
+
+### B. Table allocations and GC pressure
+
+1. Profile before changing anything: `[EventPipeProfiler(EventPipeProfile.GcVerbose)]` on a
+   temporary copy of `TableBenchmarks`, or `dotnet-trace collect --profile gc-verbose`, to
+   get the top allocation sites per row. Suspects:
+   - `TextStyle.MergeWith` allocates a new style per span per layout, even when the
+     override adds nothing.
+   - Each cell keeps its decorator chain (`Background` → `Padding` → alignment → `TextBlock`),
+     a `List<WrappedLine>`, one `List<TextToken>` per line, and a layout cache entry, all
+     alive for the whole publish.
+   - `Table._occupied` holds a `HashSet<int>` per row.
+   - `TextToken` has grown to seven fields (text, style, two flags, font, colour, width).
+2. Candidate fixes, applied in the order the profile ranks them:
+   - `MergeWith` returns `this` when the override is empty; cache merged styles per
+     (base, override) pair.
+   - Replace `_occupied` with a per-row "next free column" array; keep a set only for rows a
+     row span reaches into.
+   - Store a line as a (start, count) slice of the block's token array instead of its own
+     list, with a fast path for single-line blocks (most cells).
+   - Move style, font and colour into a shared per-span record, so a token is text, width
+     and a span index.
+3. Targets: under 10 KB per `PlainTable` row, no Gen2 collections at 1,000 rows, and
+   1,000 → 10,000 rows scaling at ×10.5 or better.
+
+Effort 1–2 days. Output stays byte-identical.
+
+### C. PNG decoder buffers (item 6)
+
+Only matters now for PNGs with an alpha channel; opaque RGB and palette PNGs skip decoding.
+
+1. Decompress through a small stream that walks the IDAT chunks in place, instead of
+   concatenating them first.
+2. Decompress into one buffer of the exact size (`height × (1 + width × bpp)`) with
+   `ReadExactly`, instead of `MemoryStream` + `ToArray`.
+3. Undo the row filters in place in that buffer (the previous row sits just above), removing
+   the per-row arrays.
+4. Split colour and alpha in one pass; allocate the alpha array only when some pixel is
+   transparent.
+5. Target: `DecodePng` 8.1 MB → ≈2.9 MB and ≈30% faster.
+
+Effort ½ day. Output byte-identical; covered by the existing alpha tests and the
+filter-coverage PNGs described below.
+
+### D. Phase 3
+
+1. **Parallel compression.** In `PdfDocument.Save`, compress page content streams and
+   decoded PNGs in parallel (`Parallel.For`), then write objects in their original order.
+   Object ids are still assigned sequentially, so output stays byte-identical. Encryption
+   stays per object, after compression. Effort ½ day.
+2. **Streaming output.** Write each object to the output as soon as it is built and record its
+   offset for the xref table, instead of collecting everything in `binaryObjects` first. Lower
+   peak memory on large documents; byte-identical output. Effort ½–1 day.
+3. **Compression-level option.** Public API, e.g. `doc.Compression(PdfCompression.Fastest)`,
+   defaulting to today's `Optimal` so existing output does not change. Needs validation, XML
+   docs, tests, a docs page and a CHANGELOG "Added" entry. Effort ½ day.
+4. **Parallel page rendering** (last, only if benchmarks still justify it). Blockers:
+   thread-static state (`LayoutPass.Current`, `TextBlock.PageCountDependentLayouts`) would
+   have to flow to worker threads; the bookmark and heading recorders depend on order and
+   need per-page buffers merged afterwards; header and footer elements would be drawn by
+   several pages at once (their caches are replaced atomically, but this needs checking).
+   Effort 1–2 days, high risk.
+
+### Order
+
+1. **C**: small, no output change.
+2. **B**: the largest remaining time and memory gain.
+3. **A**: changes output on purpose; ship with a version bump and release note.
+4. **D1 → D2 → D3.**
+5. **D4** only if benchmarks still justify it.
+
+Each step: tests on net8.0/net9.0/net10.0; before/after benchmarks with the same job for the
+affected classes; byte-identical non-encrypted samples for B, C, D1 and D2; the glyph-position
+and visual checks for A.
+
+## Progress — plans A, B, C (2026-09-26)
+
+Applied in the order C → B → A. Same machine and `ShortRun` job. All 581 tests pass on
+net8.0, net9.0 and net10.0.
+
+### C. PNG decoder buffers
+
+`PngDecoder.Decode` now works on the file bytes: IDAT chunks are read in place through a
+small stream, decompressed with `ReadAtLeast` into one buffer of the exact size, unfiltered
+in place, and converted to RGB in one pass; the alpha plane is only allocated when a pixel is
+transparent. The now-unused stream overload was removed.
+
+- Output: byte-identical samples. RGBA and gray+alpha test PNGs using all five row filters
+  (plain and encrypted) decode pixel-exactly, colour and alpha.
+- `DecodePng` 2.11 → 1.40 ms, 8.1 → 2.4 MB (target was ≈2.9 MB). `PngDocument` −17% time,
+  −69% allocation.
+
+### B. Table allocations and GC pressure
+
+Profiled first, with an in-process `EventListener` on GC allocation ticks (ranking by type)
+and `dotnet-trace` + TraceEvent (allocation stacks). Fixes, in the order the profile ranked
+them:
+
+| Cause found | Fix |
+|---|---|
+| `PdfColor` had no `IEquatable`, so `Equals` went through reflection and boxed every `double` (≈15% of allocations) | `PdfColor : IEquatable<PdfColor>` with `==`/`!=` (public API addition) |
+| `TextToken` carried style, font and a 3-double colour (~72 bytes per word), held in growing lists | Tokens share one `TextFormat` per span; token lists sized exactly; single-line blocks use their token list as the line; `TrimTrailing` trims in place |
+| A `DrawingContext` object per decorator level per cell | `DrawingContext` is a `readonly struct` |
+| `TextStyle.Default` built a new object on every access (and `DrawingContext` read it on every `At`) | One shared instance (the type is immutable) |
+| LINQ `Sum`/`Max`/`Where` over lists (boxed enumerators), `SplitWords` iterator, font fallback iterator, name normalisation, `FromHex` substrings, decoration list, page-number placeholder | Loops, a list-filling splitter, a static style list, cached normalised names, allocation-free hex parsing, lazily created lists |
+| Cached lines kept alive until the end of the publish | A block's cached layout is released once drawn |
+
+A remaining `System.Double` boxing in `StringBuilder.AppendInterpolatedStringHandler.AppendFormatted<double>`
+only appears before the JIT's tier-1 recompilation, so it only affects the first few
+documents in a process, not steady state.
+
+Results (steady state):
+
+| Target | Result |
+|---|---|
+| Under 10 KB per `PlainTable` row | **8.1 KB** (2.5 compose + 5.6 publish), from 26.4 KB |
+| No Gen2 collections at 1,000 rows | **Met** (0 Gen2) |
+| 1,000 → 10,000 rows at ×10.5 or better | **Not met: ×15.7** (7.15 → 112 ms) |
+
+The remaining super-linear cost at 10,000 rows is garbage collection over the live document
+tree: the whole element tree (≈25 MB for 10,000 rows) stays alive from composition until the
+publish ends, so Gen1/Gen2 collections get more expensive as the document grows. Reducing
+that further needs a change to the document model (for example, releasing or streaming
+content that has been rendered), which is outside this plan. Absolute times still improved:
+`PlainTable` 10,000 rows 196 → 112 ms after Phase 2.
+
+Output: byte-identical samples.
+
+### A. Built-in font width tables
+
+- Compared every entry of the six width tables against the Adobe Core-14 AFM files (WinAnsi
+  code → glyph name → `WX`): 25 entries were wrong (12 in Helvetica, 7 in Times-Bold including
+  ASCII `Z`, 6 in Times-Italic; Helvetica-Bold, Times-Roman and Times-BoldItalic were already
+  exact). They were patched in place from the AFM data.
+- Characters with no WinAnsi code are measured as `?`, the glyph drawn in their place.
+- `AfmWidthTableTests` checks every WinAnsi glyph of the nine AFM font variants against the
+  AFM files, which are committed unmodified under `tests/TerraPDF.Tests/TestAssets/Afm/`
+  together with Adobe's `MustRead.html`, as its terms require. A committed generator script was
+  not needed: the test pins the tables.
+- The printable-ASCII limit on text-run merging (Phase 2, item 9) is removed.
+
+Verification:
+
+- A PDF with every WinAnsi character plus two unmappable characters, drawn as one run in each
+  of the 12 built-in variants: every glyph that MuPDF draws lands within **0.001 pt** of the
+  position computed from the tables.
+- Samples: extracted text is identical and no line breaks changed. Glyphs after a previously
+  mismeasured character move to their correct place: up to 26 pt on sample 14's `???` lines,
+  where words used to overlap, and 5.6 pt on sample 11's curly-quote line, which had a visible
+  extra gap. 4 samples are byte-identical; the others shrink by up to 6% thanks to the longer
+  text runs.
+- Documents whose text contains the corrected characters can wrap differently; this is noted
+  under "Fixed" in the CHANGELOG.
+
+### Results (vs the original baseline)
+
+| Benchmark | Baseline | Phase 2 | Now | Alloc baseline → now |
+|---|---:|---:|---:|---:|
+| Invoice30Lines | 0.81 ms | 0.28 ms | 0.20 ms | 1.9 MB → 390 KB |
+| Invoice300Lines | 6.92 ms | 3.48 ms | 2.01 ms | 13.8 → 2.8 MB |
+| LongText 100 pages | 90.2 ms | 28.8 ms | 9.3 ms | 237 → 17.8 MB |
+| LongText 500 pages | 422 ms | 143 ms | 67 ms | 1,186 → 89 MB |
+| RichSpans 500 pages | 560 ms | 347 ms | 254 ms | 1,415 → 246 MB |
+| UnicodeWithBuiltInFont 500 pages | 140 ms | 67 ms | 24 ms | 372 → 37 MB |
+| PlainTable 1,000 rows | 20.7 ms | 15.2 ms | 7.2 ms | 48.4 → 7.9 MB |
+| PlainTable 10,000 rows | 283 ms | 196 ms | 112 ms | 645 → 79 MB |
+| TableWithSpans 10,000 rows | 187 ms | 87 ms | 39 ms | 461 → 40 MB |
+| LatinDocument10Pages (Lato) | 15.1 ms | 8.5 ms | 6.9 ms | 28.5 → 3.1 MB |
+| DevanagariDocument10Pages | 5.7 ms | 2.7 ms | 2.6 ms | 15.7 → 2.4 MB |
+| PngDocument ×1 (RGBA) | 12.1 ms | 4.2 ms | 3.5 ms | 32.4 → 2.5 MB |
+| PngDocument ×40 (RGBA) | 93.9 ms | 4.3 ms | 3.6 ms | 323 → 2.6 MB |
+| DecodePng | 2.1 ms | 2.1 ms | 1.4 ms | 8.1 → 2.4 MB |
+| Unencrypted 20 pages | 13.8 ms | 4.4 ms | 1.5 ms | 38.3 → 3.6 MB |
+| Aes256 20 pages | 15.5 ms | 6.1 ms | 2.9 ms | 41.2 → 6.4 MB |
+| Document100QrCodes | 25.0 ms | 24.5 ms | 24.6 ms | 9.2 → 4.5 MB |
+| DenseCanvas ×100 | 26.2 ms | 24.0 ms | 24.0 ms | 21.0 → 7.2 MB |
+
 ### Still open
 
-- Correct the WinAnsi width tables and the width of unmappable characters (see above).
-  Built-in-font runs could then include all characters.
-- `PlainTable` still grows faster than linearly (×12.9 from 1,000 to 10,000 rows).
-- Item 6 (PNG decoder buffers). Now matters only for PNGs with an alpha channel.
-- Phase 3.
+- Phase 3 ([plan D](#d-phase-3)): parallel compression, streaming output, a compression-level
+  option, parallel rendering.
+- Table scaling at very large sizes (document-model change, see B above).
+- `Document100QrCodes` and `DenseCanvas` time is unchanged since the baseline. Neither was
+  profiled; they are the next candidates if QR- or canvas-heavy documents matter.
+- The verification scripts below are still scratch scripts; commit them under
+  `tools/pdf-compare/`.
+
+## Verification tools
+
+The equivalence checks used for Phases 1 and 2 were run with throwaway scripts. They should
+be committed under `tools/pdf-compare/` so later work can be checked the same way:
+
+| Check | How it works | Used for |
+|---|---|---|
+| Byte comparison | Generate all samples (`samples/TerraPDF.Sample` with an output folder argument) before and after; compare files byte for byte. Encrypted samples (`12*`) are skipped because their file id is random. | Every change meant to keep output identical |
+| Visual and text comparison | PyMuPDF renders every page at 110 dpi and counts pixels differing by more than 24 per channel; also compares the extracted text of every page. | Changes that alter content streams (item 9) |
+| Glyph positions | PyMuPDF `rawdict` glyph origins, compared line by line; reports the largest shift per file. | Text-run merging (item 9), width tables (plan A) |
+| Width tables vs viewer | Every WinAnsi character drawn as one run per built-in variant; MuPDF glyph origins compared with cumulative AFM widths. | Width tables (plan A) |
+| Allocation profile | In-process `EventListener` on `GCAllocationTick` events (bytes by type, split into compose and publish), then `dnx dotnet-trace collect --providers Microsoft-Windows-DotNETRuntime:0x1:5` and a TraceEvent script for allocation stacks. | Table allocations (plan B) |
+| PNG round trip | A Python script writes RGB, indexed, RGBA and gray+alpha PNGs that use all five row filters and several IDAT chunks; a file-based C# app embeds them (plain and encrypted); PyMuPDF extracts each image and its soft mask and compares them pixel by pixel with the source. | PNG embedding (item 7), PNG decoder (plan C) |

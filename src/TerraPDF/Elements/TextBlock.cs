@@ -45,30 +45,39 @@ internal sealed class TextBlock : Element
     /// A single word-level unit ready for line-packing.
     /// <c>Text</c> carries the page-count placeholder for page-number spans;
     /// the actual value is substituted at draw time via the flags.
-    /// <c>Font</c>, <c>Color</c> and <c>Width</c> are resolved once when the token is
-    /// created (see <see cref="Create"/>) and reused by line breaking, measuring and drawing.
+    /// The span's style, font and colour live in a shared <see cref="TextFormat"/>, and the
+    /// width is measured once when the token is created (see <see cref="TextToken.Create"/>)
+    /// and reused by line breaking, measuring and drawing.
     /// </summary>
     internal readonly record struct TextToken(
-        string       Text,
-        TextStyle    Style,
-        bool         IsPageNumber,
-        bool         IsTotalPages,
-        ResolvedFont Font,
-        PdfColor     Color,
-        double       Width)
+        string     Text,
+        TextFormat Format,
+        bool       IsPageNumber,
+        bool       IsTotalPages,
+        double     Width)
     {
-        internal static TextToken Create(string text, TextStyle style, ResolvedFont font, PdfColor color,
+        internal TextStyle    Style => Format.Style;
+        internal ResolvedFont Font  => Format.Font;
+        internal PdfColor     Color => Format.Color;
+
+        internal static TextToken Create(string text, TextFormat format,
             bool isPageNumber = false, bool isTotalPages = false) =>
-            new(text, style, isPageNumber, isTotalPages, font, color, Measure(text, style, font));
+            new(text, format, isPageNumber, isTotalPages, Measure(text, format));
 
         /// <summary>Same token showing different text (a fragment or a page number), re-measured.</summary>
         internal TextToken WithText(string text) =>
-            this with { Text = text, Width = Measure(text, Style, Font) };
+            this with { Text = text, Width = Measure(text, Format) };
 
-        private static double Measure(string text, TextStyle style, ResolvedFont font) =>
-            FontMetrics.MeasureWidth(text, style.Size ?? 12, font,
-                style.IsBold ?? false, style.IsItalic ?? false);
+        private static double Measure(string text, TextFormat format) =>
+            FontMetrics.MeasureWidth(text, format.Style.Size ?? 12, format.Font,
+                format.Style.IsBold ?? false, format.Style.IsItalic ?? false);
     }
+
+    /// <summary>
+    /// A span's resolved style, font and colour, shared by all of its tokens so each token
+    /// only carries its text and width.
+    /// </summary>
+    internal sealed record TextFormat(TextStyle Style, ResolvedFont Font, PdfColor Color);
 
     private static ResolvedFont ResolveFont(TextStyle style) =>
         PdfFonts.ResolveFont(style.Family, style.IsBold ?? false, style.IsItalic ?? false);
@@ -78,55 +87,66 @@ internal sealed class TextBlock : Element
     /// </summary>
     private List<TextToken> Tokenize(TextStyle baseStyle, string pageNum, string totalPages)
     {
-        var tokens = new List<TextToken>();
+        // Sized exactly up front: token lists are the largest per-block allocation.
+        int count = 0;
+        foreach (var span in Spans)
+            count += span is LiteralSpan literal ? CountWords(literal.Text) : 1;
+
+        var tokens = new List<TextToken>(count);
         foreach (var span in Spans)
         {
             TextStyle s = baseStyle.MergeWith(span.Style);
-            var font  = ResolveFont(s);
-            var color = PdfColor.FromHex(s.Color ?? "#000000");
+            var format = new TextFormat(s, ResolveFont(s), PdfColor.FromHex(s.Color ?? "#000000"));
             switch (span)
             {
                 case LiteralSpan ls:
-                    foreach (string word in SplitWords(ls.Text))
-                        tokens.Add(TextToken.Create(word, s, font, color));
+                    AddWords(tokens, ls.Text, format);
                     break;
                 case PageNumberSpan:
-                    tokens.Add(TextToken.Create(pageNum,    s, font, color, isPageNumber: true));
+                    tokens.Add(TextToken.Create(pageNum,    format, isPageNumber: true));
                     break;
                 case TotalPagesSpan:
-                    tokens.Add(TextToken.Create(totalPages, s, font, color, isTotalPages: true));
+                    tokens.Add(TextToken.Create(totalPages, format, isTotalPages: true));
                     break;
             }
         }
         return tokens;
     }
 
+    /// <summary>Number of tokens <see cref="AddWords"/> produces for <paramref name="text"/>.</summary>
+    private static int CountWords(string text)
+    {
+        int count = 0;
+        for (int i = 0; i < text.Length; count++)
+            i = NextWordEnd(text, i);
+        return count;
+    }
+
+    /// <summary>End (exclusive) of the word, whitespace run or newline starting at <paramref name="i"/>.</summary>
+    private static int NextWordEnd(string text, int i)
+    {
+        if (text[i] == '\n')
+            return i + 1;
+        if (char.IsWhiteSpace(text[i]))
+        {
+            while (i < text.Length && char.IsWhiteSpace(text[i]) && text[i] != '\n') i++;
+            return i;
+        }
+        while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
+        return i;
+    }
+
     /// <summary>
     /// Splits <paramref name="text"/> into alternating non-whitespace word tokens,
-    /// whitespace-run tokens, and explicit newline tokens.
+    /// whitespace-run tokens, and explicit newline tokens, appended to <paramref name="tokens"/>.
     /// </summary>
-    private static IEnumerable<string> SplitWords(string text)
+    private static void AddWords(List<TextToken> tokens, string text, TextFormat format)
     {
-        int i = 0;
-        while (i < text.Length)
+        for (int s = 0; s < text.Length; )
         {
-            if (text[i] == '\n')
-            {
-                yield return "\n";
-                i++;
-            }
-            else if (char.IsWhiteSpace(text[i]))
-            {
-                int s = i;
-                while (i < text.Length && char.IsWhiteSpace(text[i]) && text[i] != '\n') i++;
-                yield return text[s..i];
-            }
-            else
-            {
-                int s = i;
-                while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
-                yield return text[s..i];
-            }
+            int end = NextWordEnd(text, s);
+            tokens.Add(TextToken.Create(end - s == text.Length ? text : text[s..end], format));
+            s = end;
         }
     }
 
@@ -142,6 +162,12 @@ internal sealed class TextBlock : Element
     /// </summary>
     private static List<WrappedLine> BuildLines(List<TextToken> tokens, double availableWidth)
     {
+        // Fast path: everything fits on one line (most table cells and labels). The greedy
+        // loop below would never wrap — each prefix width is at most the total — so the
+        // token list itself becomes the line instead of being copied into a new one.
+        if (FitsOnOneLine(tokens, availableWidth))
+            return [new WrappedLine(TrimTrailing(tokens), IsLastInParagraph: true)];
+
         var lines   = new List<WrappedLine>();
         var current = new List<TextToken>();
         double lineW = 0;
@@ -232,11 +258,39 @@ internal sealed class TextBlock : Element
         return fragments;
     }
 
+    /// <summary>
+    /// True when the tokens need no wrapping, no hard break and no leading-whitespace skip,
+    /// i.e. <see cref="BuildLines"/> would produce exactly one line holding all of them.
+    /// </summary>
+    private static bool FitsOnOneLine(List<TextToken> tokens, double availableWidth)
+    {
+        if (tokens.Count == 0 || string.IsNullOrWhiteSpace(tokens[0].Text))
+            return false;
+
+        double lineW = 0;
+        foreach (var t in tokens)
+        {
+            if (t.Text == "\n") return false;
+            lineW += t.Width;
+            if (lineW > availableWidth) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Removes trailing whitespace tokens in place (each line owns its list).</summary>
     private static List<TextToken> TrimTrailing(List<TextToken> line)
     {
         int last = line.Count - 1;
         while (last >= 0 && string.IsNullOrWhiteSpace(line[last].Text)) last--;
-        return line[..(last + 1)];
+        line.RemoveRange(last + 1, line.Count - last - 1);
+        return line;
+    }
+
+    private static double SumWidths(List<TextToken> tokens)
+    {
+        double total = 0;
+        foreach (var t in tokens) total += t.Width;
+        return total;
     }
 
     // -- Measure / line layout --------------------------------------
@@ -274,7 +328,7 @@ internal sealed class TextBlock : Element
         TextStyle resolved = (defaultStyle ?? TextStyle.Default).MergeWith(SpanStyle);
         double    lineH    = (resolved.Size ?? 12) * (resolved.LineHeightMultiplier ?? 1.4);
 
-        string placeholder = totalPagesHint.ToString(CultureInfo.InvariantCulture);
+        string placeholder = hasPageNumbers ? totalPagesHint.ToString(CultureInfo.InvariantCulture) : string.Empty;
         var tokens = Tokenize(resolved, placeholder, placeholder);
         var result = (BuildLines(tokens, w), resolved, lineH);
 
@@ -299,9 +353,9 @@ internal sealed class TextBlock : Element
 
         // Return the width of the widest line so that container-level alignment elements
         // (AlignCenter, AlignRight) can compute the correct offset.
-        double contentW = lines.Count > 0
-            ? lines.Max(l => l.Tokens.Sum(t => t.Width))
-            : 0;
+        double contentW = 0;
+        foreach (var line in lines)
+            contentW = Math.Max(contentW, SumWidths(line.Tokens));
 
         return new ElementSize(contentW, lines.Count * lineH);
     }
@@ -330,35 +384,33 @@ internal sealed class TextBlock : Element
     /// operators are illegal inside <c>BT…ET</c>, so they are flushed after the text
     /// object closes).
     /// </summary>
+    /// <remarks><paramref name="decorations"/> is created on first use: most text has none.</remarks>
     private static void AddDecorations(in TextToken token, double x, double lineY,
-        List<DecorationStroke> decorations)
+        ref List<DecorationStroke>? decorations)
     {
+        bool strike = token.Style.IsStrikethrough ?? false;
+        bool underline = token.Style.IsUnderline ?? false;
+        if (!strike && !underline) return;
+
         double sf = token.Style.Size ?? 12;
         double bl = lineY + sf;
+        decorations ??= [];
 
-        if (token.Style.IsStrikethrough ?? false)
+        if (strike)
             decorations.Add(new DecorationStroke(x, bl - sf * 0.35, token.Width, token.Color, sf * 0.07));
 
-        if (token.Style.IsUnderline ?? false)
+        if (underline)
             decorations.Add(new DecorationStroke(x, bl + sf * 0.12, token.Width, token.Color, sf * 0.07));
     }
 
     /// <summary>
     /// True when <paramref name="next"/> can be appended to a run started by
-    /// <paramref name="first"/> and shown by the same Tj, i.e. the viewer will advance
-    /// through the run by exactly the widths measured here.
-    /// <para>
-    /// Custom fonts always qualify (their <c>/W</c> array carries the measured widths).
-    /// For the built-in fonts only printable ASCII does: the width tables for the
-    /// WinAnsi range above 0x7E are not exact for every glyph, and unmappable characters
-    /// are measured differently from the <c>?</c> drawn in their place, so such tokens
-    /// keep their own exactly positioned show op.
-    /// </para>
+    /// <paramref name="first"/> and shown by the same Tj. The viewer then advances through
+    /// the run by its own glyph widths, which equal the widths measured here: the built-in
+    /// font tables match the Adobe AFMs (see <c>AfmWidthTableTests</c>) and custom fonts
+    /// embed the measured widths in their <c>/W</c> array.
     /// </summary>
-    /// <remarks>The caller has already checked <paramref name="first"/> itself qualifies.</remarks>
-    private static bool CanJoinRun(in TextToken first, in TextToken next) =>
-        SameTextState(first, next)
-        && (first.Font.IsCustom || IsPrintableAscii(next.Text));
+    private static bool CanJoinRun(in TextToken first, in TextToken next) => SameTextState(first, next);
 
     private static string ConcatTexts(List<TextToken> tokens, int start, int end)
     {
@@ -374,14 +426,12 @@ internal sealed class TextBlock : Element
         });
     }
 
-    private static bool IsPrintableAscii(string text) =>
-        text.AsSpan().IndexOfAnyExceptInRange(' ', '~') < 0;
-
     /// <summary>
     /// True when <paramref name="b"/> renders with exactly the same font, size and colour
     /// as <paramref name="a"/>, so both can be shown by one text-showing operator.
     /// </summary>
     private static bool SameTextState(in TextToken a, in TextToken b) =>
+        ReferenceEquals(a.Format, b.Format) ||
         a.Font.IsCustom == b.Font.IsCustom
         && (a.Font.IsCustom
             ? ReferenceEquals(a.Font.Custom, b.Font.Custom)
@@ -410,6 +460,12 @@ internal sealed class TextBlock : Element
     {
         var (lines, resolved, lineH) = LayoutLines(ctx.Width, ctx.DefaultTextStyle, ctx.TotalPages);
         DrawLines(ctx, lines, resolved, lineH);
+
+        // Layout runs for the whole document before anything is drawn, so every block's
+        // cached lines would otherwise stay alive until the publish ends and get promoted
+        // to Gen2 on large documents. Most blocks are drawn once; the few drawn again
+        // (headers, footers, repeated table header rows) simply lay out again.
+        _layoutCache = null;
     }
 
     /// <summary>
@@ -423,7 +479,7 @@ internal sealed class TextBlock : Element
         var alignment = resolved.Alignment ?? TextAlignment.Left;
 
         double curY = ctx.Y;
-        var decorations = new List<DecorationStroke>();
+        List<DecorationStroke>? decorations = null;
 
         foreach (var (rawTokens, isLastInParagraph) in lines)
         {
@@ -447,7 +503,7 @@ internal sealed class TextBlock : Element
 
             // One text object per line; opened lazily so empty lines emit nothing.
             bool textOpen = false;
-            decorations.Clear();
+            decorations?.Clear();
 
             void Show(in TextToken token, string text, double x)
             {
@@ -462,8 +518,8 @@ internal sealed class TextBlock : Element
             if (lineAlignment == TextAlignment.Justify)
             {
                 // Justify: skip whitespace tokens, distribute extra space between word gaps.
-                var    words    = lineTokens.Where(t => !string.IsNullOrWhiteSpace(t.Text)).ToList();
-                double wordsW   = words.Sum(t => t.Width);
+                var    words    = lineTokens.FindAll(t => !string.IsNullOrWhiteSpace(t.Text));
+                double wordsW   = SumWidths(words);
                 int    gapCount = words.Count - 1;
                 double extra    = gapCount > 0 ? (ctx.Width - wordsW) / gapCount : 0;
 
@@ -473,7 +529,7 @@ internal sealed class TextBlock : Element
                 foreach (var token in words)
                 {
                     Show(token, token.Text, curX);
-                    AddDecorations(token, curX, curY, decorations);
+                    AddDecorations(token, curX, curY, ref decorations);
                     curX += token.Width;
                     if (wordIdx < gapCount)
                         curX += extra;
@@ -483,7 +539,7 @@ internal sealed class TextBlock : Element
             else
             {
                 // Left / Center / Right: preserve natural whitespace widths.
-                double totalLineW = lineTokens.Sum(t => t.Width);
+                double totalLineW = SumWidths(lineTokens);
                 double curX = lineAlignment switch
                 {
                     TextAlignment.Right  => ctx.X + ctx.Width - totalLineW,
@@ -492,23 +548,21 @@ internal sealed class TextBlock : Element
                 };
 
                 // Consecutive tokens (words and the spaces between them) in the same font,
-                // size and colour are shown by a single Tj when the viewer's advance widths
-                // are known to equal the widths measured here (see CanJoinRun), so it lays
-                // them out exactly as one positioned word at a time would, with far fewer
-                // operators.
+                // size and colour are shown by a single Tj: the viewer's advance widths equal
+                // the widths measured here (see CanJoinRun), so it lays them out exactly as
+                // one positioned word at a time would, with far fewer operators.
                 int i = 0;
                 while (i < lineTokens.Count)
                 {
                     var first = lineTokens[i];
-                    bool joinable = first.Font.IsCustom || IsPrintableAscii(first.Text);
                     int end = i + 1;
-                    while (joinable && end < lineTokens.Count && CanJoinRun(first, lineTokens[end]))
+                    while (end < lineTokens.Count && CanJoinRun(first, lineTokens[end]))
                         end++;
 
                     double runX = curX;
                     for (int k = i; k < end; k++)
                     {
-                        AddDecorations(lineTokens[k], curX, curY, decorations);
+                        AddDecorations(lineTokens[k], curX, curY, ref decorations);
                         curX += lineTokens[k].Width;
                     }
 
@@ -524,7 +578,7 @@ internal sealed class TextBlock : Element
 
             // Underline/strikethrough are graphics operators — draw them after
             // the text object closes, at the exact per-token coordinates.
-            foreach (var s in decorations)
+            foreach (var s in decorations ?? [])
                 ctx.Page.AddLine(s.X, s.Y, s.X + s.Width, s.Y, s.Color, s.LineWidth);
 
             curY += lineH;

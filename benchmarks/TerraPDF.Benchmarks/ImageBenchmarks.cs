@@ -28,15 +28,13 @@ public class ImageBenchmarks : PdfBenchmarkBase
     [Benchmark]
     public int DecodePng()
     {
-        using var stream = new MemoryStream(_png, writable: false);
-        return PngDecoder.Decode(stream, out _, out _, out _).Length;
+        return PngDecoder.Decode(_png, out _, out _, out _).Length;
     }
 
     [Benchmark]
     public int DecodeAlphaPng()
     {
-        using var stream = new MemoryStream(_alphaPng, writable: false);
-        return PngDecoder.Decode(stream, out _, out _, out _).Length;
+        return PngDecoder.Decode(_alphaPng, out _, out _, out _).Length;
     }
 
     [Benchmark]
