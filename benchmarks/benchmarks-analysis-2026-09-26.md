@@ -1,8 +1,9 @@
 # Benchmark analysis — 2026-09-26
 
 First run of the `TerraPDF.Benchmarks` suite (see [docs/benchmarks.md](../docs/benchmarks.md)),
-the hotspots it revealed, their root causes in the code, a prioritised plan to fix them, and
-the results of Phases 1 and 2 and of the follow-up work (plans A, B and C).
+the hotspots it revealed, their root causes in the code, a prioritised plan to fix them, the
+results of Phases 1 and 2 and of the follow-up work (plans A, B and C, then QR codes and vector
+content), and what it means for a service: pages per second in a container.
 
 ## Status summary
 
@@ -24,19 +25,33 @@ the results of Phases 1 and 2 and of the follow-up work (plans A, B and C).
 | 13 | QR codes | Done (Phase 2); the per-module finding turned out to be wrong, see Findings |
 | – | Built-in font width tables (found in Phase 2) | Done ([plan A](#a-built-in-font-width-tables)); changes output on purpose |
 | – | Table allocations / GC pressure | Done ([plan B](#b-table-allocations-and-gc-pressure)); scaling at 10,000 rows limited by the document model, see [Progress — plans A, B, C](#progress--plans-a-b-c-2026-09-26) |
+| – | QR code generation (found profiling QR documents) | Done, see [QR codes and vector content](#progress--qr-codes-and-vector-content-2026-09-26) |
+| – | Number formatting in content streams | Done, same section |
+| – | Throughput in a container (pages per second) | Measured, see [Throughput in a container](#throughput-in-a-container-pages-per-second) |
 | Phase 3 | Parallel compression, streaming output, compression option, parallel rendering | Open, see [plan D](#d-phase-3) |
 
 ### Headline results (baseline → now)
 
+In a container limited to 2 CPUs and 1 GB (Docker, Linux arm64, .NET 10, Server GC):
+
+| Document | Pages per second | Pages per minute | CPU per page | Allocated per page |
+|---|---:|---:|---:|---:|
+| Invoice (1 page: logo, table, QR code) | 362 → **682** (×1.9) | 21,700 → **40,900** | 4.8 → 2.3 ms | 9.4 → 2.8 MB |
+| Annual report (19 pages: text, tables, charts) | 3,080 → **8,600** (×2.8) | 185,000 → **516,000** | 0.62 → 0.20 ms | 1.2 MB → 276 KB |
+
+Single-operation benchmarks (BenchmarkDotNet):
+
 | Benchmark | Time | Allocated |
 |---|---:|---:|
-| Invoice30Lines | 0.81 → 0.20 ms (−75%) | 1.9 MB → 390 KB |
-| LongText 500 pages | 422 → 67 ms (−84%) | 1,186 → 89 MB |
-| PlainTable 10,000 rows | 283 → 112 ms (−60%) | 645 → 79 MB |
-| TableWithSpans 10,000 rows | 187 → 39 ms (−79%) | 461 → 40 MB |
+| Invoice30Lines | 0.81 → 0.14 ms (−83%) | 1.9 MB → 390 KB |
+| LongText 500 pages | 422 → 64 ms (−85%) | 1,186 → 89 MB |
+| PlainTable 10,000 rows | 283 → 99 ms (−65%) | 645 → 79 MB |
+| TableWithSpans 10,000 rows | 187 → 36 ms (−81%) | 461 → 40 MB |
 | LatinDocument10Pages (Lato) | 15.1 → 6.9 ms (−54%) | 28.5 → 3.1 MB |
 | PngDocument ×40 | 93.9 → 3.6 ms (−96%) | 323 → 2.6 MB |
-| Unencrypted 20 pages | 13.8 → 1.5 ms (−89%) | 38.3 → 3.6 MB |
+| Unencrypted 20 pages | 13.8 → 1.3 ms (−91%) | 38.3 → 3.6 MB |
+| Document100QrCodes | 25.0 → 10.7 ms (−57%) | 9.2 → 4.0 MB |
+| DenseCanvas ×100 | 26.2 → 15.1 ms (−42%) | 21.0 → 7.2 MB |
 
 ## Environment
 
@@ -512,7 +527,7 @@ Verification:
 | Document100QrCodes | 25.0 ms | 24.5 ms | 24.6 ms | 9.2 → 4.5 MB |
 | DenseCanvas ×100 | 26.2 ms | 24.0 ms | 24.0 ms | 21.0 → 7.2 MB |
 
-### Still open
+### Still open at that point (superseded by [Still open](#still-open-1) at the end)
 
 - Phase 3 ([plan D](#d-phase-3)): parallel compression, streaming output, a compression-level
   option, parallel rendering.
@@ -521,6 +536,140 @@ Verification:
   profiled; they are the next candidates if QR- or canvas-heavy documents matter.
 - The verification scripts below are still scratch scripts; commit them under
   `tools/pdf-compare/`.
+
+## Progress — QR codes and vector content (2026-09-26)
+
+`Document100QrCodes` and `DenseCanvas` had not moved since the baseline, so they were profiled
+(thread-time sampling with `dotnet-trace`, stacks aggregated with TraceEvent):
+
+- **QR documents:** 40–55% of the time was QR generation. Most of it was mask selection:
+  `SelectBestMask` cloned the `bool[,]` matrix for each of the 8 masks, and the four penalty
+  rules scanned it module by module. The rest was drawing and output: `AddFilledRects` 20%,
+  Deflate 13%, number formatting 6%.
+- **Canvas documents:** almost nothing was geometry. Time went into the amount of content-stream
+  text: Deflate 37%, buffer allocation 34%, `FormatFloat` 13% (a circle is 26 numbers).
+
+### Q1. QR generation
+
+- `QrMatrixBuilder` works on flat row-major arrays. Each candidate mask is applied with an XOR,
+  scored, and undone with a second XOR, so the matrix is never copied.
+- Mask conditions are computed from per-row and per-column residues instead of divisions per
+  module.
+- The four penalty rules (ISO/IEC 18004 §7.8.3) are scored bit-parallel. Every row and column is
+  packed into 192 bits, then:
+  - **runs:** a run of length L costs L − 2 = (5-module windows in the run) + 2 × (run starts);
+  - **2×2 blocks:** horizontal equality on both rows AND vertical equality;
+  - **finder-like patterns:** 11 shifted ANDs;
+  - **balance:** one popcount.
+- Verification: a dump of 458 symbols (4 error-correction levels, versions 1 to 40) is
+  identical before and after, bit for bit, and the samples are byte-identical.
+
+| Benchmark | Baseline | Now |
+|---|---:|---:|
+| QrShort L / H | 62.6 / 109 µs | 27.9 / 42.4 µs (−55% / −61%) |
+| QrLong L / H | 1.68 / 4.42 ms | 0.26 / 0.68 ms (−84% / −85%) |
+| Document100QrCodes | 25.0 ms | 10.7 ms (−57%) |
+
+### N1. Number formatting
+
+- New `PdfReal`, a small `ISpanFormattable` used as `{PdfReal.F2(x)}` in the content-stream
+  interpolations, so `StringBuilder` formats it without boxing.
+- It scales and rounds in integer arithmetic. Below 1e7 the scaled double is within half an ulp
+  (under 1e-9) of the exact value, so away from a rounding tie it rounds exactly like the exact
+  decimal expansion.
+- Within 1e-7 of a tie, for large values and for NaN/infinity it uses `double.TryFormat("F2"/"F4")`.
+  `-0.00` is preserved.
+- Verification: 20 million values (coordinates, colours, near-ties, arbitrary bit patterns) give
+  exactly the same text as `ToString("F2"/"F4")`. A unit test keeps a sample of 800,000. The
+  samples are byte-identical.
+- Effect: `DenseCanvas` −37%, and every document with vector content or tables gains
+  (Invoice300Lines −30% after this step alone).
+
+## Throughput in a container (pages per second)
+
+`benchmarks/TerraPDF.Throughput` (see [docs/benchmarks.md](../docs/benchmarks.md)) generates
+documents in parallel for a fixed time and reports pages per second and per minute, CPU per page,
+allocation, GC, memory and latency.
+
+`run-comparison.sh` builds the same harness against the base commit `61f5c50` (in a temporary
+git worktree) and against the current tree. It runs both images one after the other with
+`--cpus=2 --memory=1g`, for 30 s per scenario after a 10 s warm-up. That is Docker Desktop's
+Linux VM (arm64, 4 CPUs) on an Apple M5, with .NET 10.0.12 and Server GC. Two runs agreed within
+2%; the figures are from the second.
+
+| | Invoice, before | Invoice, after | Report, before | Report, after |
+|---|---:|---:|---:|---:|
+| **Pages per second** | 361 | **674** (×1.87) | 3,025 | **8,778** (×2.90) |
+| **Pages per minute** | 21,600 | **40,500** | 181,500 | **526,700** |
+| CPU per page | 4.81 ms | 2.41 ms (−50%) | 0.63 ms | 0.21 ms (−67%) |
+| Allocated per page | 9.4 MB | 2.8 MB (−70%) | 1.2 MB | 276 KB (−77%) |
+| Peak working set | 97 MB | 86 MB | 121 MB | 108 MB |
+| Latency p50 per document | 4.6 ms | 2.1 ms | 11.4 ms | 3.6 ms |
+
+The invoice is a 1-page document; the report has 19 pages.
+
+What this means for a service:
+
+- **Same hardware, more output.** A 2-CPU instance produces about twice as many invoices and
+  almost three times as many report pages. Put differently, the same load needs one half to one
+  third of the CPU.
+- **Memory.** The working set of a busy 2-CPU container stays around 90–110 MB. It was already
+  modest, and it drops by about 10%. The large gain is in allocation, 70–77% less per page. That
+  means less GC work, which is part of the CPU saving, and more headroom under a tight memory
+  limit.
+- **Invoices still decode their logo every time.** The invoice uses the RGBA header logo, which
+  every document decodes again (about 2.4 MB of pixels, on the large object heap). That is why
+  its GC is dominated by Gen2 collections and why it does not use the full 2 CPUs (81%). Caching
+  decoded images across documents, or pooling the decode buffers, is the next gain for this kind
+  of document (see "Still open").
+
+## Current results vs the original baseline
+
+Full BenchmarkDotNet suite, `ShortRun` job, same machine as the baseline:
+
+| Benchmark | Baseline | Now | Δ time | Alloc baseline → now |
+|---|---:|---:|---:|---:|
+| HelloWorld | 10.5 µs | 8.8 µs | −16% | 90 → 84 KB |
+| Invoice30Lines | 0.81 ms | 0.14 ms | −83% | 1.9 MB → 390 KB |
+| Invoice300Lines | 6.92 ms | 1.42 ms | −79% | 13.8 → 2.8 MB |
+| LongText 100 pages | 90.2 ms | 8.8 ms | −90% | 237 → 17.8 MB |
+| LongText 500 pages | 422 ms | 64 ms | −85% | 1,186 → 89 MB |
+| RichSpans 500 pages | 560 ms | 240 ms | −57% | 1,415 → 246 MB |
+| UnicodeWithBuiltInFont 500 pages | 140 ms | 27 ms | −81% | 372 → 37 MB |
+| PlainTable 1,000 rows | 20.7 ms | 5.2 ms | −75% | 48.4 → 7.9 MB |
+| PlainTable 10,000 rows | 283 ms | 99 ms | −65% | 645 → 79 MB |
+| TableWithSpans 10,000 rows | 187 ms | 36 ms | −81% | 461 → 40 MB |
+| LatinDocument10Pages (Lato) | 15.1 ms | 6.9 ms | −54% | 28.5 → 3.1 MB |
+| DevanagariDocument10Pages | 5.7 ms | 2.3 ms | −60% | 15.7 → 2.4 MB |
+| SubsetLato | 115 µs | 83 µs | −28% | 938 → 302 KB |
+| DecodePng | 2.1 ms | 1.4 ms | −33% | 8.1 → 2.4 MB |
+| PngDocument ×40 (RGBA) | 93.9 ms | 3.6 ms | −96% | 323 → 2.6 MB |
+| RgbPngDocument ×40 (new) | – | 89 µs | – | 139 KB |
+| JpegDocument ×40 | 98 µs | 89 µs | −9% | 174 → 135 KB |
+| Unencrypted 20 pages | 13.8 ms | 1.3 ms | −91% | 38.3 → 3.6 MB |
+| Aes256 20 pages | 15.5 ms | 2.7 ms | −82% | 41.2 → 6.4 MB |
+| QrShort L | 62.6 µs | 27.9 µs | −55% | 13 → 8 KB |
+| QrLong H | 4.4 ms | 0.68 ms | −85% | 449 → 325 KB |
+| Document100QrCodes | 25.0 ms | 10.7 ms | −57% | 9.2 → 4.0 MB |
+| DenseCanvas ×100 | 26.2 ms | 15.1 ms | −42% | 21.0 → 7.2 MB |
+
+All 598 tests pass on net8.0, net9.0 and net10.0. Output is byte-identical to the baseline
+except for three deliberate changes, each verified visually and on extracted text:
+
+- merged text runs (item 9);
+- PNG passthrough (item 7);
+- corrected font widths (plan A).
+
+## Still open
+
+| Item | Expected gain | Notes |
+|---|---|---|
+| Cache decoded images across documents (process-wide, bounded, keyed by content hash), or pool the PNG decode buffers | Invoice-type documents: fewer Gen2 collections, higher throughput | Logos are the same in every document of a service |
+| Phase 3 (plan D): parallel compression, streaming output, compression-level option | Save step ×2–3 on multi-page documents; lower peak memory | D1/D2 keep output identical |
+| C1: content buffer in bytes instead of UTF-16 | Content memory halved, no encoding step | Mechanical refactor of `PdfPage` |
+| N2 / Q2 / C2: shorter numbers, merged QR rectangles, graphics-state caching | Smaller content streams | Change output; need visual checks |
+| Table scaling at very large sizes | GC over the live document tree | Needs a document-model change |
+| Commit the verification scripts under `tools/pdf-compare/` | Repeatable checks | Currently scratch scripts |
 
 ## Verification tools
 
@@ -533,5 +682,8 @@ be committed under `tools/pdf-compare/` so later work can be checked the same wa
 | Visual and text comparison | PyMuPDF renders every page at 110 dpi and counts pixels differing by more than 24 per channel; also compares the extracted text of every page. | Changes that alter content streams (item 9) |
 | Glyph positions | PyMuPDF `rawdict` glyph origins, compared line by line; reports the largest shift per file. | Text-run merging (item 9), width tables (plan A) |
 | Width tables vs viewer | Every WinAnsi character drawn as one run per built-in variant; MuPDF glyph origins compared with cumulative AFM widths. | Width tables (plan A) |
+| QR symbol dump | 458 symbols (4 levels × lengths covering versions 1–40) hashed module by module, compared before and after. | QR generation (Q1) |
+| Fixed-point formatter | 20 million values compared with `ToString("F2"/"F4")`; a sample is kept as a unit test (`PdfRealTests`). | Number formatting (N1) |
+| CPU profile | `dnx dotnet-trace collect --profile dotnet-common,dotnet-sampled-thread-time` on a small harness, stacks aggregated with TraceEvent; helpers temporarily marked `NoInlining` to split inlined time. | QR and canvas (Q1, N1) |
 | Allocation profile | In-process `EventListener` on `GCAllocationTick` events (bytes by type, split into compose and publish), then `dnx dotnet-trace collect --providers Microsoft-Windows-DotNETRuntime:0x1:5` and a TraceEvent script for allocation stacks. | Table allocations (plan B) |
 | PNG round trip | A Python script writes RGB, indexed, RGBA and gray+alpha PNGs that use all five row filters and several IDAT chunks; a file-based C# app embeds them (plain and encrypted); PyMuPDF extracts each image and its soft mask and compares them pixel by pixel with the source. | PNG embedding (item 7), PNG decoder (plan C) |

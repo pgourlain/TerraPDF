@@ -98,7 +98,7 @@ internal sealed class PdfPage
         double pdfX = Math.Round(x, 2);
         double pdfY = Math.Round(Height - y, 2);
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {(pdfX):F2} {(pdfY):F2} Tm\n");
+            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {PdfReal.F2(pdfX)} {PdfReal.F2(pdfY)} Tm\n");
         _ops.Append('(');
         AppendEscapedPdfString(_ops, text);
         _ops.Append(") Tj\n");
@@ -115,7 +115,7 @@ internal sealed class PdfPage
         double pdfX = Math.Round(x, 2);
         double pdfY = Math.Round(Height - y, 2);
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {(pdfX):F2} {(pdfY):F2} Tm\n");
+            $"{M(cos)} {M(-sin)} {M(sin)} {M(cos)} {PdfReal.F2(pdfX)} {PdfReal.F2(pdfY)} Tm\n");
         AppendIdentityHHex(text, variant);
         _ops.Append(" Tj\n");
     }
@@ -135,7 +135,7 @@ internal sealed class PdfPage
         // between rounded absolute positions so rounding never accumulates.
         double pdfX = Math.Round(x, 2);
         double pdfY = Math.Round(Height - y, 2);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(pdfX - _textTdX):F2} {(pdfY - _textTdY):F2} Td\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(pdfX - _textTdX)} {PdfReal.F2(pdfY - _textTdY)} Td\n");
         _textTdX = pdfX;
         _textTdY = pdfY;
     }
@@ -144,13 +144,13 @@ internal sealed class PdfPage
     {
         if (_textColor is null || !_textColor.Value.Equals(color))
         {
-            _ops.Append(CultureInfo.InvariantCulture, $"{(color.R):F4} {(color.G):F4} {(color.B):F4} rg\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(color.R)} {PdfReal.F4(color.G)} {PdfReal.F4(color.B)} rg\n");
             _textColor = color;
         }
 
         if (fontAlias != _textFontAlias || fontSize != _textFontSize)
         {
-            _ops.Append(CultureInfo.InvariantCulture, $"/{fontAlias} {(fontSize):F2} Tf\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"/{fontAlias} {PdfReal.F2(fontSize)} Tf\n");
             _textFontAlias = fontAlias;
             _textFontSize = fontSize;
         }
@@ -279,9 +279,9 @@ internal sealed class PdfPage
         for (var index = 0; index < dashPattern.Length; index++)
         {
             if (index > 0) _ops.Append(' ');
-            _ops.Append(CultureInfo.InvariantCulture, $"{dashPattern[index]:F2}");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(dashPattern[index])}");
         }
-        _ops.Append(CultureInfo.InvariantCulture, $"] {(dashPhase):F2} d\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"] {PdfReal.F2(dashPhase)} d\n");
         return true;
     }
 
@@ -303,10 +303,10 @@ internal sealed class PdfPage
         // Flip both endpoints from top-left to bottom-left origin
         double pdfY1 = Height - y1;
         double pdfY2 = Height - y2;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(color.R):F4} {(color.G):F4} {(color.B):F4} RG\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x1):F2} {(pdfY1):F2} m\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x2):F2} {(pdfY2):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(color.R)} {PdfReal.F4(color.G)} {PdfReal.F4(color.B)} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x1)} {PdfReal.F2(pdfY1)} m\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x2)} {PdfReal.F2(pdfY2)} l\n");
         _ops.Append("S\n");
         EndOpacityScope(scope);
         EndDashScope(dashScope);
@@ -318,8 +318,8 @@ internal sealed class PdfPage
         bool scope = BeginOpacityScope(opacity);
         // PDF rect origin is bottom-left corner, so shift by h after flipping Y
         double pdfY = Height - y - h;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} {(w):F2} {(h):F2} re\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} {PdfReal.F2(w)} {PdfReal.F2(h)} re\n");
         _ops.Append("f\n");
         EndOpacityScope(scope);
     }
@@ -341,11 +341,11 @@ internal sealed class PdfPage
             if (w <= 0 || h <= 0) continue;
             if (!wroteColor)
             {
-                _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
+                _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
                 wroteColor = true;
             }
             double pdfY = Height - y - h;
-            _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} {(w):F2} {(h):F2} re\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} {PdfReal.F2(w)} {PdfReal.F2(h)} re\n");
             wroteAny = true;
         }
         if (wroteAny) _ops.Append("f\n");
@@ -359,9 +359,9 @@ internal sealed class PdfPage
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} {(w):F2} {(h):F2} re\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} {PdfReal.F2(w)} {PdfReal.F2(h)} re\n");
         _ops.Append("S\n");
         EndOpacityScope(scope);
         EndDashScope(dashScope);
@@ -375,10 +375,10 @@ internal sealed class PdfPage
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         double pdfY = Height - y - h;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} {(w):F2} {(h):F2} re\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} {PdfReal.F2(w)} {PdfReal.F2(h)} re\n");
         _ops.Append("B\n");
         EndOpacityScope(scope);
         EndDashScope(dashScope);
@@ -409,27 +409,27 @@ internal sealed class PdfPage
         double k = r * _bezierArcK;
 
         // Start at top-left corner, just right of the top-left arc
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x + r):F2} {(t):F2} m\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x + r)} {PdfReal.F2(t)} m\n");
 
         // Top edge → top-right arc
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x + w - r):F2} {(t):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x + w - r)} {PdfReal.F2(t)} l\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(x + w - r + k):F2} {(t):F2} {(x + w):F2} {(t - r + k):F2} {(x + w):F2} {(t - r):F2} c\n");
+            $"{PdfReal.F2(x + w - r + k)} {PdfReal.F2(t)} {PdfReal.F2(x + w)} {PdfReal.F2(t - r + k)} {PdfReal.F2(x + w)} {PdfReal.F2(t - r)} c\n");
 
         // Right edge → bottom-right arc
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x + w):F2} {(b + r):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x + w)} {PdfReal.F2(b + r)} l\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(x + w):F2} {(b + r - k):F2} {(x + w - r + k):F2} {(b):F2} {(x + w - r):F2} {(b):F2} c\n");
+            $"{PdfReal.F2(x + w)} {PdfReal.F2(b + r - k)} {PdfReal.F2(x + w - r + k)} {PdfReal.F2(b)} {PdfReal.F2(x + w - r)} {PdfReal.F2(b)} c\n");
 
         // Bottom edge → bottom-left arc
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x + r):F2} {(b):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x + r)} {PdfReal.F2(b)} l\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(x + r - k):F2} {(b):F2} {(x):F2} {(b + r - k):F2} {(x):F2} {(b + r):F2} c\n");
+            $"{PdfReal.F2(x + r - k)} {PdfReal.F2(b)} {PdfReal.F2(x)} {PdfReal.F2(b + r - k)} {PdfReal.F2(x)} {PdfReal.F2(b + r)} c\n");
 
         // Left edge → top-left arc → close
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(t - r):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(t - r)} l\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(x):F2} {(t - r + k):F2} {(x + r - k):F2} {(t):F2} {(x + r):F2} {(t):F2} c\n");
+            $"{PdfReal.F2(x)} {PdfReal.F2(t - r + k)} {PdfReal.F2(x + r - k)} {PdfReal.F2(t)} {PdfReal.F2(x + r)} {PdfReal.F2(t)} c\n");
 
         _ops.Append("h\n");
     }
@@ -441,8 +441,8 @@ internal sealed class PdfPage
     {
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("S\n");
         EndOpacityScope(scope);
@@ -454,7 +454,7 @@ internal sealed class PdfPage
         double radius, PdfColor fillColor, double opacity = 1)
     {
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("f\n");
         EndOpacityScope(scope);
@@ -467,9 +467,9 @@ internal sealed class PdfPage
     {
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("B\n");
         EndOpacityScope(scope);
@@ -489,15 +489,15 @@ internal sealed class PdfPage
         double kx = rx * _bezierArcK;
         double ky = ry * _bezierArcK;
 
-        _ops.Append(CultureInfo.InvariantCulture, $"{(cx + rx):F2} {(pdfCy):F2} m\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(cx + rx)} {PdfReal.F2(pdfCy)} m\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(cx + rx):F2} {(pdfCy + ky):F2} {(cx + kx):F2} {(pdfCy + ry):F2} {(cx):F2} {(pdfCy + ry):F2} c\n");
+            $"{PdfReal.F2(cx + rx)} {PdfReal.F2(pdfCy + ky)} {PdfReal.F2(cx + kx)} {PdfReal.F2(pdfCy + ry)} {PdfReal.F2(cx)} {PdfReal.F2(pdfCy + ry)} c\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(cx - kx):F2} {(pdfCy + ry):F2} {(cx - rx):F2} {(pdfCy + ky):F2} {(cx - rx):F2} {(pdfCy):F2} c\n");
+            $"{PdfReal.F2(cx - kx)} {PdfReal.F2(pdfCy + ry)} {PdfReal.F2(cx - rx)} {PdfReal.F2(pdfCy + ky)} {PdfReal.F2(cx - rx)} {PdfReal.F2(pdfCy)} c\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(cx - rx):F2} {(pdfCy - ky):F2} {(cx - kx):F2} {(pdfCy - ry):F2} {(cx):F2} {(pdfCy - ry):F2} c\n");
+            $"{PdfReal.F2(cx - rx)} {PdfReal.F2(pdfCy - ky)} {PdfReal.F2(cx - kx)} {PdfReal.F2(pdfCy - ry)} {PdfReal.F2(cx)} {PdfReal.F2(pdfCy - ry)} c\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(cx + kx):F2} {(pdfCy - ry):F2} {(cx + rx):F2} {(pdfCy - ky):F2} {(cx + rx):F2} {(pdfCy):F2} c\n");
+            $"{PdfReal.F2(cx + kx)} {PdfReal.F2(pdfCy - ry)} {PdfReal.F2(cx + rx)} {PdfReal.F2(pdfCy - ky)} {PdfReal.F2(cx + rx)} {PdfReal.F2(pdfCy)} c\n");
         _ops.Append("h\n");
     }
 
@@ -508,8 +508,8 @@ internal sealed class PdfPage
     {
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("S\n");
         EndOpacityScope(scope);
@@ -521,7 +521,7 @@ internal sealed class PdfPage
         PdfColor fillColor, double opacity = 1)
     {
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("f\n");
         EndOpacityScope(scope);
@@ -534,9 +534,9 @@ internal sealed class PdfPage
     {
         bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
-        _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(strokeColor.R):F4} {(strokeColor.G):F4} {(strokeColor.B):F4} RG\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(fillColor.R):F4} {(fillColor.G):F4} {(fillColor.B):F4} rg\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(strokeColor.R)} {PdfReal.F4(strokeColor.G)} {PdfReal.F4(strokeColor.B)} RG\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fillColor.R)} {PdfReal.F4(fillColor.G)} {PdfReal.F4(fillColor.B)} rg\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("B\n");
         EndOpacityScope(scope);
@@ -560,14 +560,14 @@ internal sealed class PdfPage
         bool scope = BeginOpacityScope(opacity);
         if (strokeColor.HasValue)
         {
-            _ops.Append(CultureInfo.InvariantCulture, $"{(lineWidth):F2} w\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(lineWidth)} w\n");
             var sc = strokeColor.Value;
-            _ops.Append(CultureInfo.InvariantCulture, $"{(sc.R):F4} {(sc.G):F4} {(sc.B):F4} RG\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(sc.R)} {PdfReal.F4(sc.G)} {PdfReal.F4(sc.B)} RG\n");
         }
         if (fillColor.HasValue)
         {
             var fc = fillColor.Value;
-            _ops.Append(CultureInfo.InvariantCulture, $"{(fc.R):F4} {(fc.G):F4} {(fc.B):F4} rg\n");
+            _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F4(fc.R)} {PdfReal.F4(fc.G)} {PdfReal.F4(fc.B)} rg\n");
         }
         return scope;
     }
@@ -576,14 +576,14 @@ internal sealed class PdfPage
     internal void PathMoveTo(double x, double y)
     {
         double pdfY = Height - y;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} m\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} m\n");
     }
 
     /// <summary>Appends a lineto operator.</summary>
     internal void PathLineTo(double x, double y)
     {
         double pdfY = Height - y;
-        _ops.Append(CultureInfo.InvariantCulture, $"{(x):F2} {(pdfY):F2} l\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} l\n");
     }
 
     /// <summary>Appends a cubic Bézier curveto operator.</summary>
@@ -596,7 +596,7 @@ internal sealed class PdfPage
         double pdfCy2 = Height - cy2;
         double pdfY = Height - y;
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(cx1):F2} {(pdfCy1):F2} {(cx2):F2} {(pdfCy2):F2} {(x):F2} {(pdfY):F2} c\n");
+            $"{PdfReal.F2(cx1)} {PdfReal.F2(pdfCy1)} {PdfReal.F2(cx2)} {PdfReal.F2(pdfCy2)} {PdfReal.F2(x)} {PdfReal.F2(pdfY)} c\n");
     }
 
     /// <summary>Closes the current subpath.</summary>
@@ -715,7 +715,7 @@ internal sealed class PdfPage
         // and the rect origin sits at the bottom of the drawn area (top - drawH).
         double pdfY = Height - y - drawH;
         _ops.Append("q\n");
-        _ops.Append(CultureInfo.InvariantCulture, $"{(drawW):F2} 0 0 {(drawH):F2} {(x):F2} {(pdfY):F2} cm\n");
+        _ops.Append(CultureInfo.InvariantCulture, $"{PdfReal.F2(drawW)} 0 0 {PdfReal.F2(drawH)} {PdfReal.F2(x)} {PdfReal.F2(pdfY)} cm\n");
         _ops.Append(CultureInfo.InvariantCulture, $"/{alias} Do\n");
         _ops.Append("Q\n");
     }
@@ -725,7 +725,7 @@ internal sealed class PdfPage
         double pdfY = Height - y - height;
         _ops.Append("q\n");
         _ops.Append(CultureInfo.InvariantCulture,
-            $"{(x):F2} {(pdfY):F2} {(width):F2} {(height):F2} re W n\n");
+            $"{PdfReal.F2(x)} {PdfReal.F2(pdfY)} {PdfReal.F2(width)} {PdfReal.F2(height)} re W n\n");
     }
 
     internal void EndClip() => _ops.Append("Q\n");
@@ -767,9 +767,9 @@ internal sealed class PdfPage
     // --------------------------------------------------------------
 
     // Coordinates and sizes are written as 2-decimal PDF reals ("72.00") and colour
-    // components as 4-decimal ones ("0.5020"), formatted in place with {value:F2} /
-    // {value:F4} inside _ops.Append(CultureInfo.InvariantCulture, $"...") so no
-    // temporary strings are allocated per operand.
+    // components as 4-decimal ones ("0.5020"), formatted in place with {PdfReal.F2(v)} /
+    // {PdfReal.F4(v)} inside _ops.Append(CultureInfo.InvariantCulture, $"...") — no
+    // temporary strings, and exactly the text "F2"/"F4" would produce.
 
     /// <summary>
     /// Formats a text-matrix coefficient. Rotation cosines and sines need far more
