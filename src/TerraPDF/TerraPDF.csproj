@@ -16,7 +16,7 @@
 
     <!-- NuGet package identity and discoverability -->
     <PackageId>TerraPDF</PackageId>
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
     <Authors>Saheb Ansari</Authors>
     <Copyright>Copyright © 2025-2026 TerraPDF Contributors</Copyright>
     <Title>TerraPDF - Free C# PDF Library for .NET</Title>
@@ -29,16 +29,17 @@
       layouts, PNG and JPEG images, borders, page breaks, hyperlinks, headers, footers,
       page numbers, AES-256 encryption, Code128 barcodes, QR codes, custom TrueType
       font embedding with automatic subsetting, vector graphics with rotated text
-      labels, elliptical arcs and pie sectors, dashed strokes, positioned images with
+      labels, elliptical arcs and pie sectors, dashed strokes, linear and radial
+      gradient fills, canvas links, bookmarks, and QR codes, positioned images with
       five fit modes, and constant-alpha transparency, full Unicode support, and
       cross-platform .NET 8, 9, and 10 support.
     </Description>
-    <PackageTags>pdf;pdf-generation;pdf-library;pdf-document-generator;pdf-reporting;dotnet-pdf;create-pdf;generate-pdf;pdf-writer;pdf-creator;free;open-source;mit;document;reporting;report;fluent-api;invoice;invoice-generator;receipt;statement;table;image;barcode;qrcode;qr-code;code128;encryption;aes-256;no-dependency;zero-dependency;cross-platform;windows;linux;macos;docker;aspnetcore;dotnet;csharp;custom-fonts;truetype;font-embedding;font-subsetting;unicode;vector-graphics;transparency;canvas;image-fit;arc;pie-chart;dashed-lines;text-rotation;net8;net9;net10</PackageTags>
+    <PackageTags>pdf;pdf-generation;pdf-library;pdf-document-generator;pdf-reporting;dotnet-pdf;create-pdf;generate-pdf;pdf-writer;pdf-creator;free;open-source;mit;document;reporting;report;fluent-api;invoice;invoice-generator;receipt;statement;table;image;barcode;qrcode;qr-code;code128;encryption;aes-256;no-dependency;zero-dependency;cross-platform;windows;linux;macos;docker;aspnetcore;dotnet;csharp;custom-fonts;truetype;font-embedding;font-subsetting;unicode;vector-graphics;transparency;canvas;image-fit;arc;pie-chart;gradient;dashed-lines;text-rotation;net8;net9;net10</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageProjectUrl>https://github.com/sahebansari/TerraPDF</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>Version 2.2.0 adds positioned PNG/JPEG images on the vector canvas with five fit modes, clockwise text rotation, elliptical arcs and pie sectors, and native dash patterns with phase. It also fixes grayscale+alpha PNG decoding and text-matrix precision for small rotation angles. Full changelog: https://github.com/sahebansari/TerraPDF/blob/master/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>Version 2.3.0 adds linear and radial gradient fills, dashed strokes on ellipses, rounded rectangles, pie sectors, and arbitrary paths, rounded-rectangle paths, and clickable links, in-document links, bookmarks, and vector QR codes placed at canvas positions. It fixes VectorCanvas.Grid() drawing nothing and ShowIf(false) not hiding chained content. Full changelog: https://github.com/sahebansari/TerraPDF/blob/master/CHANGELOG.md</PackageReleaseNotes>
 
      <!-- ── Source Link / reproducible build ────────────────────────────── -->
     <RepositoryUrl>https://github.com/sahebansari/TerraPDF</RepositoryUrl>
@@ -50,8 +51,8 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageIcon>icon.png</PackageIcon>
-    <AssemblyVersion>2.2.0</AssemblyVersion>
-    <FileVersion>2.2.0</FileVersion>
+    <AssemblyVersion>2.3.0</AssemblyVersion>
+    <FileVersion>2.3.0</FileVersion>
   </PropertyGroup>
 
   <!-- Bundle the README into the NuGet package -->

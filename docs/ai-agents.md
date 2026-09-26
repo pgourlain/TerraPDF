@@ -46,8 +46,11 @@ The skill covers:
   sizes, WinAnsi-only standard fonts, and canvas coordinates.
 - **API reference**: every public member with its signature and defaults.
 - **Recipes**: invoice, report with TOC, reusable components, bar and pie
-  charts, Unicode fonts, encryption, shipping label, spanning tables, and an
-  ASP.NET Core endpoint. All of them compile.
+  charts, a canvas event ticket (gradients, dashed outlines, links, QR code),
+  Unicode fonts, encryption, shipping label, spanning tables, and an ASP.NET
+  Core endpoint. All of them compile.
+- **Version markers**: API members added in 2.3.0 are marked **[2.3+]**, so an
+  assistant does not use them against an older package.
 - **Troubleshooting**: compiler errors mapped to fixes, and runtime symptoms
   mapped to causes.
 

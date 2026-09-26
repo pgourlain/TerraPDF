@@ -290,6 +290,51 @@ public static void PieChart(IContainer container, IReadOnlyList<(string Label, d
 }
 ```
 
+## Event ticket: gradients, dashed outlines, canvas links, and a QR code (2.3+)
+
+Uses canvas members added in 2.3.0. A gradient
+banner, a dashed tear-off outline, a painted button with a link laid over it,
+a canvas QR code, and a bookmark for the ticket.
+
+```csharp
+public static byte[] EventTicket(string attendee, string ticketId, string eventUrl)
+{
+    const double width = 420, height = 170;
+
+    return Document.Create(doc => doc.Page(page =>
+    {
+        page.Size(width + 40, height + 40);
+        page.Margin(20);
+        page.Content().Canvas(height, c =>
+        {
+            c.Bookmark($"Ticket {ticketId}");
+
+            // Card with a gradient banner; the gradient spans the path's bounding box.
+            c.Path(p => p.RoundedRect(0, 0, width, height, 12).Fill("#FFFFFF").Stroke("#1A3C5E", 1));
+            // Banner: rounded top corners; the extra Rect squares off the bottom ones.
+            c.Path(p => p.RoundedRect(0, 0, width, 46, 12).Rect(0, 23, width, 23)
+                         .FillLinearGradient("#1A3C5E", "#2E6DA4"));
+            c.Text("TerraConf 2026", 16, 30, "#FFFFFF", 16, bold: true);
+
+            c.Text(attendee, 16, 76, "#212121", 13, bold: true);
+            c.Text($"Ticket {ticketId}", 16, 94, "#6C757D", 9);
+
+            // A painted button, then a link over the same rectangle (links draw nothing).
+            c.FillRoundedRect(16, 112, 130, 26, 6, "#E87722");
+            c.Text("Event details", 40, 129, "#FFFFFF", 10, bold: true);
+            c.Link(16, 112, 130, 26, eventUrl);
+
+            // Dashed tear-off line and stub outline.
+            c.Line(300, 8, 300, height - 8, "#9AA0A6", 1, dashPattern: [4, 3]);
+            c.StrokeRoundedRect(312, 56, 96, 104, 8, "#9AA0A6", 1, dashPattern: [2, 2]);
+
+            // Size includes the quiet zone; null background leaves it transparent.
+            c.QrCode($"{eventUrl}?ticket={ticketId}", 316, 60, 88, QrErrorCorrectionLevel.Q, backgroundHex: "#FFFFFF");
+        });
+    })).PublishPdf();
+}
+```
+
 ## Unicode text with a custom font
 
 The standard fonts only cover WinAnsi (Western European). Register a
@@ -383,7 +428,7 @@ public static void Catalogue(string path, byte[] logoPng, bool showDiscount)
 
         page.Content().PaddingTop(10).Column(col =>
         {
-            // A C# `if` works on every version (ShowIf(false) is broken in 2.2.0).
+            // A C# `if` works on every version; ShowIf(false) hides chained content from 2.3.0.
             if (showDiscount)
             {
                 col.Item().Background(Color.Green.Lighten5).Padding(6)

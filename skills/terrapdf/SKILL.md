@@ -16,8 +16,10 @@ TerraPDF is a zero-dependency, pure C# PDF 1.7 generator for .NET 8, 9, and 10
    API members.** If something is not in the reference, it does not exist.
 3. For a known document type, adapt a recipe from
    [references/recipes.md](references/recipes.md) (invoice, report with TOC,
-   long tables, reusable components, charts, Unicode fonts, encryption,
-   barcodes and labels, ASP.NET Core endpoint).
+   long tables, reusable components, charts, a canvas ticket with gradients
+   and links, Unicode fonts, encryption, barcodes and labels, ASP.NET Core
+   endpoint). Members marked **[2.3+]** in the reference need TerraPDF 2.3.0
+   or later.
 4. `dotnet build`, then run the code and confirm a non-empty PDF was written.
    If it does not compile, check
    [references/troubleshooting.md](references/troubleshooting.md) before
@@ -110,8 +112,8 @@ decorators (chain) → exactly one element (ends the chain).**
     anchored at the baseline. Pies take a bounding box; `Arc`/`Sector` take a
     centre and radii. Angles start at 3 o'clock and run clockwise.
 11. **Prefer a C# `if` for conditional content.** It works on every version.
-    In TerraPDF 2.2.0, `ShowIf(false)` is overridden by the element chained
-    after it, and `Grid()` draws nothing. Both are fixed in later releases.
+    Before 2.3.0, `ShowIf(false)` was overridden by the element chained
+    after it, and `Grid()` drew nothing.
 12. **Units default to points** (72 pt = 1 inch). Overloads that take a
     `Unit` accept `Point`, `Millimetre`, `Centimetre`, and `Inch`.
 

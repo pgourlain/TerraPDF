@@ -333,7 +333,7 @@ layout gives the canvas, and it draws in call order: shapes added before `Grid`
 sit underneath it, and shapes added after sit on top. Only interior lines are
 drawn; add a `StrokeRect` for a border.
 
-> **TerraPDF 2.2.0 and earlier:** `Grid` drew nothing, because the canvas size was
+> **Before 2.3.0:** `Grid` drew nothing, because the canvas size was
 > not yet known when the callback ran. On those versions, draw the lines with `Line`.
 
 ---

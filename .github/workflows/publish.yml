@@ -17,6 +17,15 @@
 #      - Copy the CHANGELOG section as release notes
 #      - Click "Publish release"
 #   => This workflow runs automatically and pushes .nupkg + .snupkg to nuget.org
+#
+# Packages published by this workflow (each keeps its own <Version>):
+#   TerraPDF         src/TerraPDF/TerraPDF.csproj              - the release tag must match this version
+#   TerraPDF.Agents  src/TerraPDF.Agents/TerraPDF.Agents.csproj - agent tools (AIFunctions)
+#   TerraPDF.Mcp     src/TerraPDF.Mcp/TerraPDF.Mcp.csproj       - MCP server (dotnet tool)
+# Every release packs all three. A package whose version was not bumped is
+# already on nuget.org and is skipped by --skip-duplicate, so bump TerraPDF.Agents
+# or TerraPDF.Mcp only when they change. NUGET_API_KEY must be allowed to push
+# all three package IDs (for example, glob pattern "TerraPDF*").
 
 name: Publish NuGet
 
@@ -54,8 +63,10 @@ jobs:
       # binaries are run directly. This gates the NuGet push, so it must fail loudly.
       - name: Test
         run: |
-          for tfm in net8.0 net9.0 net10.0; do
-            ./tests/TerraPDF.Tests/bin/Release/$tfm/TerraPDF.Tests
+          for suite in TerraPDF.Tests TerraPDF.Agents.Tests; do
+            for tfm in net8.0 net9.0 net10.0; do
+              ./tests/$suite/bin/Release/$tfm/$suite
+            done
           done
 
       # Ensure the Git tag (e.g. v1.2.0) matches <Version> in the .csproj (e.g. 1.2.0).
@@ -72,12 +83,34 @@ jobs:
             exit 1
           fi
 
+      # The NuGet MCP server listing reads .mcp/server.json from the package; its
+      # two version fields must match the TerraPDF.Mcp package version.
+      - name: Verify MCP server.json matches TerraPDF.Mcp version
+        shell: bash
+        run: |
+          MCP_VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/TerraPDF.Mcp/TerraPDF.Mcp.csproj | tr -d '[:space:]')
+          JSON_VERSIONS=$(grep -oP '"version":\s*"\K[^"]+' src/TerraPDF.Mcp/.mcp/server.json || true)
+          echo "TerraPDF.Mcp version : $MCP_VERSION"
+          echo "server.json versions : $(echo $JSON_VERSIONS)"
+          # Fail closed: an unreadable version must not pass as "no mismatch".
+          if [ -z "$MCP_VERSION" ] || [ -z "$JSON_VERSIONS" ]; then
+            echo "::error::Could not read the TerraPDF.Mcp version from the csproj or .mcp/server.json."
+            exit 1
+          fi
+          MISMATCHED=$(echo "$JSON_VERSIONS" | grep -vxF "$MCP_VERSION" || true)
+          if [ -n "$MISMATCHED" ]; then
+            echo "::error::src/TerraPDF.Mcp/.mcp/server.json has version(s) $MISMATCHED; expected $MCP_VERSION to match TerraPDF.Mcp.csproj."
+            exit 1
+          fi
+
       - name: Pack
         run: |
-          dotnet pack src/TerraPDF/TerraPDF.csproj \
-            --no-build \
-            -c Release \
-            -o ./artifacts
+          for project in TerraPDF TerraPDF.Agents TerraPDF.Mcp; do
+            dotnet pack src/$project/$project.csproj \
+              --no-build \
+              -c Release \
+              -o ./artifacts
+          done
 
       # Make the .nupkg and .snupkg downloadable from the Actions run page
       - name: Upload package artifacts
@@ -86,6 +119,8 @@ jobs:
           name: nuget-packages-${{ github.ref_name }}
           path: ./artifacts/
 
+      # --skip-duplicate turns an unchanged TerraPDF.Agents / TerraPDF.Mcp version
+      # into a no-op instead of a failed release.
       - name: Push .nupkg to nuget.org
         run: |
           dotnet nuget push ./artifacts/*.nupkg \

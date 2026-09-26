@@ -295,7 +295,7 @@ container.ShowIf(isAdmin).Text("Admin panel");
 container.ShowIf(invoice.IsPaid).Background(Color.Green.Lighten4).Padding(6).Text("PAID");
 ```
 
-> **TerraPDF 2.2.0 and earlier:** the element chained after `ShowIf(false)` still
+> **Before 2.3.0:** the element chained after `ShowIf(false)` still
 > rendered. On those versions, wrap the item in a C# `if` instead.
 
 ---

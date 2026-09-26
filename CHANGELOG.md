@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.3.0] - 2026-09-26
+
 ### Added
 - Dash patterns and phases on canvas ellipses (`StrokeEllipse`, `DrawEllipse`),
   rounded rectangles (`StrokeRoundedRect`, `DrawRoundedRect`), pie sectors
@@ -30,8 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   site rather than at render time.
 - Canvas extras showcase sample (`19_CanvasExtrasShowcase.cs`) covering dashed
   shapes and paths, gradients, links, bookmarks, and QR codes.
-
-
 - AI-agent toolset:
   - **`skills/terrapdf`**: an Agent Skill for coding assistants (GitHub Copilot,
     Claude Code, and others) with rules, a verified API reference, compiling
@@ -708,7 +710,8 @@ happened to fall inside a spanned pair.
 - CI workflow (GitHub Actions): build, test, coverage.
 - Publish workflow (GitHub Actions): NuGet + symbols on release tag.
 
-[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/sahebansari/TerraPDF/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/sahebansari/TerraPDF/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...v2.0.1

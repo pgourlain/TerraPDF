@@ -14,8 +14,12 @@
 | Cyrillic/Devanagari in a standard font | `FontFamily.Register(...)` then `.FontFamily("Name")` | Standard-14 fonts are WinAnsiEncoding only |
 | `doc.Encrypt(...)` after `doc.Page(...)` | Call `Encrypt` first | Encryption must be configured before pages |
 | `Text("Chapter 1")` expecting a TOC entry | `H1("Chapter 1")` | Only `H1`–`H6` are collected |
-| `col.Item().ShowIf(cond).Text(...)` | `if (cond) col.Item().Text(...);` | In TerraPDF 2.2.0, `ShowIf(false)` is overwritten by the element chained after it, so the content still renders (fixed in later versions) |
-| `canvas.Grid(20)` inside `Canvas(...)` | Draw grid lines with `Line(...)` using widths you computed | In TerraPDF 2.2.0 the draw callback runs before layout, so `Grid` sees a zero-sized canvas and draws nothing (fixed in later versions) |
+| `col.Item().ShowIf(cond).Text(...)` | `if (cond) col.Item().Text(...);` | Before 2.3.0, `ShowIf(false)` was overwritten by the element chained after it, so the content still rendered |
+| `canvas.Grid(20)` inside `Canvas(...)` | Draw grid lines with `Line(...)` using widths you computed | Before 2.3.0 the draw callback ran before layout, so `Grid` saw a zero-sized canvas and drew nothing |
+| `canvas.StrokeCircle(..., dashPattern: [4, 2])` | `canvas.StrokeEllipse(cx, cy, r, r, ..., dashPattern: [4, 2])` | Circle methods have no dash parameters; ellipses do **[2.3+]** |
+| `p.Dash([4, 2]).Fill(...)` with no `Stroke` | Add `.Stroke(color, width)` | `Dash` only affects the stroke **[2.3+]** |
+| `.FillLinearGradient(...).Fill("#FFF")` expecting both | Keep one | `Fill` and the gradient methods replace each other; the last call wins **[2.3+]** |
+| `canvas.Link(...)` expecting a visible button | Paint the shape and text first, then `Link` over it | Links are invisible annotations **[2.3+]** |
 | `row.Item()` | `row.RelativeItem()` / `ConstantItem()` / `AutoItem()` | `Item()` exists on `ColumnDescriptor` only |
 
 ## Compiler errors
@@ -45,4 +49,8 @@
 | Blank area where a `PageBreak()` was expected to move content | A break at the very top of a page is skipped by design | Nothing to fix |
 | Empty table-of-contents page | No `H1()`-`H6()` headings | Use heading methods for section titles |
 | TOC or bookmark page numbers off by the TOC page | Manual `doc.Bookmark(title, page)` numbers are absolute, 1-based | Prefer anchored `container.Bookmark("Title")`, which resolves automatically |
+| `InvalidOperationException` at `PublishPdf` mentioning a page | A canvas `InternalLink` targets a page beyond the document's last page | Use a page number that exists (1-based, physical pages including a TOC page) **[2.3+]** |
+| `NotSupportedException` from `canvas.QrCode` | Data too long for any QR version at that level; thrown at the call, not at render | Shorten it or lower the level **[2.3+]** |
+| A canvas bookmark appears once although the canvas repeats on every page | A repeated (title, parent) pair is recorded once by design | Include something unique, such as the page, in the title **[2.3+]** |
+| `CS1061` for `Link`, `QrCode`, `Bookmark` on `VectorCanvas`, or `FillLinearGradient`/`Dash`/`RoundedRect` on `PathDescriptor` | The project references TerraPDF older than 2.3.0; these are **[2.3+]** members | Upgrade TerraPDF, or use the layout-level `Hyperlink`, `QrCode`, and `Bookmark` decorators |
 | Image stretched across the page | `Image(path)` fills the available width | `Image(path, widthPt)`, wrapped in `AlignCenter()` or `AlignRight()` to position it |

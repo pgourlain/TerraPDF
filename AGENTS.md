@@ -18,7 +18,7 @@ targeting .NET 8, 9, and 10. It also ships AI-agent tooling on top of it.
 | `src/TerraPDF.Mcp/` | MCP server (dotnet tool) hosting the agent tools and the C# guide |
 | `skills/terrapdf/` | Agent Skill for coding assistants: rules, API reference, recipes, troubleshooting |
 | `tests/` | xUnit v3 suites for the library and the agent tools |
-| `samples/TerraPDF.Sample/` | Eighteen runnable sample documents |
+| `samples/TerraPDF.Sample/` | Nineteen runnable sample documents |
 | `docs/` | User documentation, one guide per feature |
 
 ## Build and test
@@ -70,13 +70,3 @@ reports "Zero tests ran". Run the test executables directly after building:
   output directory (`SanitizeFileName`), asset paths never escape
   `AssetDirectory`, URLs are never fetched, and links allow only
   http/https/mailto. Do not weaken these without an explicit request.
-
-## Fixed after 2.2.0 (unreleased)
-
-The skill and website still document the 2.2.0 workarounds for these. When the
-fix ships, update the version wording in `skills/terrapdf/` and on the website.
-
-- `VectorCanvas.Grid()` now records a command that is sized at draw time. It
-  used to draw nothing, because `Canvas(height, draw)` runs `draw` before layout.
-- `ShowIf(false)` now returns a detached container. It used to be overwritten
-  by the element chained after it.
