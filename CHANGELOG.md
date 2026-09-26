@@ -46,8 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implements `IEquatable<PdfColor>` (colour comparisons no longer box), and
   hex colours and font names are resolved without allocating. Table rows now
   allocate ~8 KB instead of ~26 KB, and text-heavy documents ~80% less.
-- New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks` (see
-  `docs/benchmarks.md`).
+- QR code generation is 2–6× faster: the symbol is built on flat arrays, each
+  candidate mask is applied and undone in place instead of copying the matrix, and
+  the four penalty rules are scored bit-parallel on packed rows and columns. The
+  generated symbols are identical.
+- Content-stream numbers (`F2`/`F4` coordinates and colours) are written by a
+  fixed-point formatter instead of the general floating-point one, with
+  byte-identical output: vector-heavy pages are ~35% faster.
+- New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks`, and a throughput
+  harness (`benchmarks/TerraPDF.Throughput`) that measures pages per second, CPU
+  and memory, in or out of a container, and compares two versions (see
+  `docs/benchmarks.md`). In a 2-CPU / 1 GB container, invoices went from 362 to
+  682 pages/s and a 19-page annual report from 3,080 to 8,600 pages/s.
 
 ### Fixed
 - Built-in font widths now match the Adobe AFM metrics for every WinAnsi
