@@ -50,3 +50,5 @@ appsettings.*.json
 
 # MCP server default output
 pdf-output/
+# ── BenchmarkDotNet ───────────────────────────────────────────────
+BenchmarkDotNet.Artifacts/
