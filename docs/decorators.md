@@ -286,13 +286,17 @@ container.LineVertical(1.5, "#cccccc")
 
 ## ShowIf — Conditional Rendering
 
-Renders child content only when a condition is `true`. When `false` the slot is
-replaced with a zero-size no-op, so surrounding layout is unaffected.
+Renders the content chained after it only when a condition is `true`. When
+`false`, the slot renders nothing and takes no space, and every decorator and
+element chained after `ShowIf` is discarded.
 
 ```csharp
 container.ShowIf(isAdmin).Text("Admin panel");
 container.ShowIf(invoice.IsPaid).Background(Color.Green.Lighten4).Padding(6).Text("PAID");
 ```
+
+> **Before 2.3.0:** the element chained after `ShowIf(false)` still
+> rendered. On those versions, wrap the item in a C# `if` instead.
 
 ---
 

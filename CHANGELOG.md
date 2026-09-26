@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.3.0] - 2026-09-26
+
 ### Added
 - Dash patterns and phases on canvas ellipses (`StrokeEllipse`, `DrawEllipse`),
   rounded rectangles (`StrokeRoundedRect`, `DrawRoundedRect`), pie sectors
@@ -30,6 +34,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   site rather than at render time.
 - Canvas extras showcase sample (`19_CanvasExtrasShowcase.cs`) covering dashed
   shapes and paths, gradients, links, bookmarks, and QR codes.
+- AI-agent toolset:
+  - **`skills/terrapdf`**: an Agent Skill for coding assistants (GitHub Copilot,
+    Claude Code, and others) with rules, a verified API reference, compiling
+    recipes, and troubleshooting.
+  - **`TerraPDF.Agents`** (new package): `create_pdf` and
+    `get_pdf_document_format` tools that render a validated JSON document
+    (headings, paragraphs, lists, tables, key/value, callouts, columns, charts,
+    images, barcodes, and QR codes). They are exposed as `AIFunction`s for the
+    Microsoft Agent Framework, Semantic Kernel, and `IChatClient`. Errors return
+    JSON paths so models can self-correct. File output is sandboxed.
+  - **`TerraPDF.Mcp`** (new package, dotnet tool `terrapdf-mcp`): an MCP server
+    hosting the same tools plus `get_terrapdf_csharp_guide`, for Copilot,
+    Cursor, Claude, and LangChain.
+  - `AGENTS.md` and `docs/ai-agents.md`.
+
+### Fixed
+- `VectorCanvas.Grid()` drew nothing. The canvas callback runs before layout,
+  when the canvas size is still zero, so the grid is now recorded as a command
+  and sized when the canvas is drawn. It also keeps its place in the draw order.
+  `Grid` now rejects a non-positive `cellHeight` or `lineWidth`.
+- `ShowIf(false)` did not hide anything: the element chained after it replaced
+  the empty placeholder. Everything chained after `ShowIf(false)` is now
+  discarded, including headings, so they no longer reach the table of contents.
 
 ---
 
@@ -683,7 +710,8 @@ happened to fall inside a spanned pair.
 - CI workflow (GitHub Actions): build, test, coverage.
 - Publish workflow (GitHub Actions): NuGet + symbols on release tag.
 
-[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/sahebansari/TerraPDF/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/sahebansari/TerraPDF/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/sahebansari/TerraPDF/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/sahebansari/TerraPDF/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/sahebansari/TerraPDF/compare/v2.0.0...v2.0.1

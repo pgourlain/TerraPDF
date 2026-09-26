@@ -115,6 +115,11 @@ public sealed class VectorCanvas
         internal Elements.ImageElement? Decoded { get; set; }
     }
 
+    // Expanded into lines at draw time, when the canvas size is known: the
+    // configure callback runs before layout, so the size is not known when Grid() is called.
+    internal sealed record DrawGridCmd(
+        double CellWidth, double CellHeight, string HexColor, double LineWidth) : DrawCommand;
+
     internal sealed record DrawTextCmd(
         double X, double Y, string Text, string HexColor, double FontSize,
         string? FontFamily, bool Bold, bool Italic, double Opacity, double Angle) : DrawCommand;
@@ -665,36 +670,24 @@ public sealed class VectorCanvas
 
     /// <summary>
     /// Draws a rectangular grid of vertical and horizontal lines that fills the canvas area.
+    /// The grid is sized when the canvas is drawn, so it always matches the width the canvas
+    /// receives from the layout, and it is drawn in call order relative to other commands.
     /// </summary>
     /// <param name="cellWidth">Width of each cell in PDF points.</param>
     /// <param name="cellHeight">Height of each cell in PDF points. When <c>null</c> uses <paramref name="cellWidth"/> (square cells).</param>
     /// <param name="hexColor">Line colour. Defaults to light grey.</param>
     /// <param name="lineWidth">Stroke width. Defaults to 0.5 pt.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cellWidth"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentException"><paramref name="hexColor"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cellWidth"/>, <paramref name="cellHeight"/>, or <paramref name="lineWidth"/> is zero or negative.</exception>
     public VectorCanvas Grid(double cellWidth, double? cellHeight = null,
         string hexColor = "#CCCCCC", double lineWidth = 0.5)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cellWidth);
+        if (cellHeight.HasValue) ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cellHeight.Value);
         ArgumentException.ThrowIfNullOrWhiteSpace(hexColor);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(lineWidth);
 
-        double ch = cellHeight ?? cellWidth;
-
-        // Vertical lines
-        double x = cellWidth;
-        while (x < AllocatedWidth)
-        {
-            Line(x, 0, x, AllocatedHeight, hexColor, lineWidth);
-            x += cellWidth;
-        }
-
-        // Horizontal lines
-        double y = ch;
-        while (y < AllocatedHeight)
-        {
-            Line(0, y, AllocatedWidth, y, hexColor, lineWidth);
-            y += ch;
-        }
-
+        Commands.Add(new DrawGridCmd(cellWidth, cellHeight ?? cellWidth, hexColor, lineWidth));
         return this;
     }
 }

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "description": "Create PDF files from a validated JSON document, and look up the verified TerraPDF C# API while writing code.",
+  "name": "io.github.sahebansari/terrapdf",
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "nuget",
+      "identifier": "TerraPDF.Mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [],
+      "environmentVariables": [
+        {
+          "name": "TERRAPDF_OUTPUT_DIR",
+          "description": "Directory where create_pdf writes PDF files. Defaults to ./pdf-output.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "TERRAPDF_ASSET_DIR",
+          "description": "Directory that image and font paths resolve against. Defaults to the working directory.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/sahebansari/TerraPDF",
+    "source": "github"
+  }
+}

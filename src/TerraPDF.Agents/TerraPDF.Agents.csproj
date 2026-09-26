@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <PackageId>TerraPDF.Agents</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Saheb Ansari</Authors>
+    <Title>TerraPDF.Agents - PDF generation tools for AI agents</Title>
+    <Description>
+      AI-agent toolset for TerraPDF. Lets an LLM create PDF documents by calling a
+      tool with a declarative JSON document (headings, paragraphs, tables, lists,
+      key/value blocks, charts, images, barcodes, QR codes, columns). Exposes the
+      tools as Microsoft.Extensions.AI AIFunctions, so they plug directly into the
+      Microsoft Agent Framework, Semantic Kernel, and any IChatClient. Validation
+      errors are returned to the model with JSON paths so it can correct itself.
+    </Description>
+    <PackageTags>pdf;ai;agents;llm;tools;function-calling;semantic-kernel;agent-framework;microsoft-extensions-ai;mcp;terrapdf;pdf-generation</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/sahebansari/TerraPDF</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <RepositoryUrl>https://github.com/sahebansari/TerraPDF</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TerraPDF\TerraPDF.csproj" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The document-format guide is returned verbatim by the get_pdf_document_format tool. -->
+    <EmbeddedResource Include="Resources\document-format.md" LogicalName="TerraPDF.Agents.document-format.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\TerraPDF\icon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>TerraPDF.Agents.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>
