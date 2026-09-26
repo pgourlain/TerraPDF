@@ -252,7 +252,7 @@ internal sealed class PdfPage
         if (opened) _ops.Append("Q\n");
     }
 
-    private bool BeginDashScope(double[]? dashPattern, double dashPhase)
+    internal bool BeginDashScope(double[]? dashPattern, double dashPhase)
     {
         if (dashPattern is null) return false;
         _ops.Append("q\n[");
@@ -265,7 +265,7 @@ internal sealed class PdfPage
         return true;
     }
 
-    private void EndDashScope(bool opened)
+    internal void EndDashScope(bool opened)
     {
         if (opened) _ops.Append("Q\n");
     }
@@ -416,14 +416,17 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked rounded rectangle.</summary>
     internal void AddRoundedRect(double x, double y, double w, double h,
-        double radius, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        double radius, PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("S\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     /// <summary>Draws a filled rounded rectangle (no border).</summary>
@@ -439,8 +442,10 @@ internal sealed class PdfPage
 
     /// <summary>Draws a filled-and-stroked rounded rectangle.</summary>
     internal void AddFilledAndStrokedRoundedRect(double x, double y, double w, double h,
-        double radius, PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        double radius, PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
@@ -448,6 +453,7 @@ internal sealed class PdfPage
         AppendRoundedRectPath(x, y, w, h, radius);
         _ops.Append("B\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     // --------------------------------------------------------------
@@ -477,14 +483,17 @@ internal sealed class PdfPage
 
     /// <summary>Draws a stroked ellipse.</summary>
     internal void AddStrokedEllipse(double cx, double cy, double rx, double ry,
-        PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("S\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     /// <summary>Draws a filled ellipse (no border).</summary>
@@ -500,8 +509,10 @@ internal sealed class PdfPage
 
     /// <summary>Draws a filled and stroked ellipse.</summary>
     internal void AddFilledAndStrokedEllipse(double cx, double cy, double rx, double ry,
-        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1)
+        PdfColor fillColor, PdfColor strokeColor, double lineWidth = 1, double opacity = 1,
+        double[]? dashPattern = null, double dashPhase = 0)
     {
+        bool dashScope = BeginDashScope(dashPattern, dashPhase);
         bool scope = BeginOpacityScope(opacity);
         _ops.Append(CultureInfo.InvariantCulture, $"{F(lineWidth)} w\n");
         _ops.Append(CultureInfo.InvariantCulture, $"{C(strokeColor.R)} {C(strokeColor.G)} {C(strokeColor.B)} RG\n");
@@ -509,6 +520,7 @@ internal sealed class PdfPage
         AppendEllipsePath(cx, cy, rx, ry);
         _ops.Append("B\n");
         EndOpacityScope(scope);
+        EndDashScope(dashScope);
     }
 
     // --------------------------------------------------------------
@@ -587,6 +599,43 @@ internal sealed class PdfPage
             _ops.Append("n\n");
         EndOpacityScope(opacityScopeOpen);
     }
+
+    // --------------------------------------------------------------
+    //  Gradient (shading) resources
+    // --------------------------------------------------------------
+
+    /// <summary>
+    /// A two-stop shading in PDF user space (bottom-left origin). Axial (type 2) uses
+    /// (X0,Y0)-(X1,Y1); radial (type 3) uses circles (X0,Y0,R0) and (X1,Y1,R1).
+    /// </summary>
+    internal readonly record struct ShadingSpec(
+        bool Radial, PdfColor From, PdfColor To,
+        double X0, double Y0, double R0, double X1, double Y1, double R1);
+
+    /// <summary>Shading resources used on this page: page-local alias → definition.</summary>
+    internal Dictionary<string, ShadingSpec> ShadingObjects { get; } = new();
+
+    /// <summary>
+    /// Paints a two-stop gradient over the current clipping path (<c>sh</c>). The
+    /// caller has already appended the path and clipped it with <c>W n</c>, inside a
+    /// <c>q</c>…<c>Q</c> pair. Coordinates are top-left origin, flipped here.
+    /// </summary>
+    internal void PaintShading(bool radial, PdfColor from, PdfColor to,
+        double x0, double y0, double r0, double x1, double y1, double r1)
+    {
+        string alias = $"Sh{ShadingObjects.Count + 1}";
+        ShadingObjects[alias] = new ShadingSpec(radial, from, to, x0, Height - y0, r0, x1, Height - y1, r1);
+        _ops.Append(CultureInfo.InvariantCulture, $"/{alias} sh\n");
+    }
+
+    /// <summary>Opens a <c>q</c> scope, so a clipping path can be applied and later restored.</summary>
+    internal void BeginClipScope() => _ops.Append("q\n");
+
+    /// <summary>Clips to the path built so far (<c>W n</c>, or <c>W* n</c> for even-odd).</summary>
+    internal void ClipToPath(bool evenOdd) => _ops.Append(evenOdd ? "W* n\n" : "W n\n");
+
+    /// <summary>Closes a scope opened with <see cref="BeginClipScope"/>.</summary>
+    internal void EndClipScope() => _ops.Append("Q\n");
 
     // --------------------------------------------------------------
     //  Link annotations
