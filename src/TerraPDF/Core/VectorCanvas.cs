@@ -107,9 +107,9 @@ public sealed class VectorCanvas
         byte[] Data, double X, double Y, double W, double H, ImageFit Fit) : DrawCommand
     {
         /// <summary>
-        /// The decoded image, populated by <c>CanvasElement</c> on first draw and reused
+        /// The image element, populated by <c>CanvasElement</c> on first draw and reused
         /// on every later replay of this command so a canvas repeated across pages
-        /// decodes its PNG once rather than once per page. Excluded from record equality
+        /// parses and hashes its image once rather than once per page. Excluded from record equality
         /// and value semantics on purpose — it is a cache, not part of the command.
         /// </summary>
         internal Elements.ImageElement? Decoded { get; set; }

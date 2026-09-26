@@ -160,3 +160,47 @@ the hotspots it revealed, their root causes in the code, and a prioritised plan 
 Each change should be its own PR, with a before/after table from the relevant benchmark filter
 (e.g. `--filter '*TableBenchmarks*'`), the full test suite green, and output equivalence verified
 (except for items 7 and 9).
+
+## Progress — 2026-09-26
+
+Applied steps 1 and 2 of the suggested order: items **2, 1, 3, 4, 8, 5**.
+Same machine and `ShortRun` job as the baseline. All tests pass on net8.0, net9.0 and
+net10.0, and every non-encrypted sample PDF is byte-identical to the one produced before
+the changes.
+
+| Item | Change |
+|---|---|
+| 2 | `LayoutAllStable` skips the re-layout when no page-number span was laid out (`TextBlock.PageCountDependentLayouts`). |
+| 1 | New `ImageSource`: header-only parse at compose time; PNG decoded once per distinct content key (SHA-256 of the file bytes) in `PdfDocument`. |
+| 3 | `TextToken` carries its resolved font, colour and width, computed once per span/token. |
+| 4 | `TextBlock.LayoutLines` and `Table.GetRowHeights` memoise their last result per publish (`LayoutPass`). |
+| 8 | `Table.DrawRows` visits only the slice's cells through a per-row cell index. |
+| 5 | Number operands formatted in place (`{value:F2}`), text escaped straight into the content buffer, colour parsed once per span. |
+
+| Benchmark | Before | After | Δ time | Alloc before | Alloc after | Δ alloc |
+|---|---:|---:|---:|---:|---:|---:|
+| Invoice30Lines | 0.81 ms | 0.34 ms | −58% | 1.9 MB | 1.1 MB | −42% |
+| Invoice300Lines | 6.92 ms | 3.90 ms | −44% | 13.8 MB | 8.9 MB | −35% |
+| LongText 100 pages | 90.2 ms | 38.3 ms | −58% | 237 MB | 98 MB | −59% |
+| LongText 500 pages | 422 ms | 198 ms | −53% | 1,186 MB | 490 MB | −59% |
+| RichSpans 500 pages | 560 ms | 364 ms | −35% | 1,415 MB | 697 MB | −51% |
+| PlainTable 1,000 rows | 20.7 ms | 16.0 ms | −22% | 48.4 MB | 25.8 MB | −47% |
+| PlainTable 10,000 rows | 283 ms | 212 ms | −25% | 645 MB | 259 MB | −60% |
+| TableWithSpans 10,000 rows | 187 ms | 101 ms | −46% | 461 MB | 147 MB | −68% |
+| LatinDocument10Pages (Lato) | 15.1 ms | 11.0 ms | −27% | 28.5 MB | 17.8 MB | −37% |
+| DevanagariDocument10Pages | 5.7 ms | 3.3 ms | −41% | 15.7 MB | 6.9 MB | −56% |
+| PngDocument ×1 | 12.1 ms | 4.2 ms | −65% | 32.4 MB | 8.2 MB | −75% |
+| PngDocument ×40 | 93.9 ms | 4.3 ms | −95% | 323 MB | 8.2 MB | −97% |
+| AlphaPngDocument ×40 | 14.9 ms | 2.0 ms | −87% | 43.6 MB | 1.3 MB | −97% |
+| Unencrypted 20 pages | 13.8 ms | 6.5 ms | −53% | 38.3 MB | 19.6 MB | −49% |
+| Document100QrCodes | 25.0 ms | 24.5 ms | −2% | 9.2 MB | 6.2 MB | −32% |
+| DenseCanvas ×100 | 26.2 ms | 25.3 ms | −3% | 21.0 MB | 13.6 MB | −36% |
+
+Micro-benchmarks of untouched code (PNG decoder, font parsing/subsetting, QR and Code128
+encoding) are unchanged, as expected.
+
+Still open:
+- `PlainTable` still grows faster than linearly (×13 from 1,000 to 10,000 rows) and
+  allocates ~26 KB per row. Profile it next: `_occupied` sets in `Table.PlaceCell` and the
+  per-cell container chains are the likely remaining costs.
+- Items 6, 7, 9–13 and Phase 3.

@@ -138,20 +138,25 @@ internal sealed class PdfDocument
             var imgMap = new Dictionary<string, int>();
             foreach (var (alias, img) in page.ImageObjects)
             {
-                string key = ImageContentKey(img.Data, img.Width, img.Height, img.IsJpeg, img.Components, img.Alpha);
+                string key = img.ContentKey;
                 if (imageObjectByHash.TryGetValue(key, out int existingId))
                 {
                     imgMap[alias] = existingId;
                     continue;
                 }
 
+                // PNG pixels are decoded here, once per distinct image; JPEG bytes
+                // are embedded verbatim.
+                byte[]? alpha = null;
+                byte[] pixels = img.IsJpeg ? img.Data : img.DecodePng(out alpha);
+
                 // RGBA transparency: emit the alpha channel as an 8-bit
                 // DeviceGray soft-mask image referenced via /SMask.
                 string smaskRef = string.Empty;
-                if (img.Alpha is not null)
+                if (alpha is not null)
                 {
                     int smaskId = nextId++;
-                    byte[] alphaCompressed = Compress(img.Alpha);
+                    byte[] alphaCompressed = Compress(alpha);
                     byte[] alphaData = _encryption is not null
                         ? _encryption.EncryptBytes(alphaCompressed, smaskId, 0)
                         : alphaCompressed;
@@ -177,8 +182,8 @@ internal sealed class PdfDocument
                         _ => "/DeviceRGB",
                     };
                     byte[] imgData = _encryption is not null
-                        ? _encryption.EncryptBytes(img.Data, imgId, 0)
-                        : img.Data;
+                        ? _encryption.EncryptBytes(pixels, imgId, 0)
+                        : pixels;
                     string dict =
                         $"<< /Type /XObject /Subtype /Image " +
                         $"/Width {img.Width} /Height {img.Height} " +
@@ -189,7 +194,7 @@ internal sealed class PdfDocument
                 }
                 else
                 {
-                    byte[] compressed = Compress(img.Data);
+                    byte[] compressed = Compress(pixels);
                     byte[] imgData = _encryption is not null
                         ? _encryption.EncryptBytes(compressed, imgId, 0)
                         : compressed;
@@ -825,26 +830,6 @@ internal sealed class PdfDocument
         return withBom;
     }
 
-    /// <summary>
-    /// Content-identity key for image deduplication: SHA-256 over the pixel/file
-    /// bytes plus the parameters that affect the emitted XObject.
-    /// </summary>
-    private static string ImageContentKey(byte[] data, int width, int height,
-        bool isJpeg, int components, byte[]? alpha)
-    {
-        using var sha = SHA256.Create();
-        sha.TransformBlock(data, 0, data.Length, null, 0);
-        if (alpha is not null)
-            sha.TransformBlock(alpha, 0, alpha.Length, null, 0);
-        byte[] meta =
-        [
-            (byte)(width  & 0xFF), (byte)((width  >> 8) & 0xFF), (byte)((width  >> 16) & 0xFF),
-            (byte)(height & 0xFF), (byte)((height >> 8) & 0xFF), (byte)((height >> 16) & 0xFF),
-            (byte)(isJpeg ? 1 : 0), (byte)components, (byte)(alpha is not null ? 1 : 0),
-        ];
-        sha.TransformFinalBlock(meta, 0, meta.Length);
-        return Convert.ToHexString(sha.Hash!);
-    }
 
     /// <summary>Converts a byte array to a PDF hex string token, e.g. &lt;AABBCC…&gt;.</summary>
     private static string BytesToHexString(byte[] bytes)

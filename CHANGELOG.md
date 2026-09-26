@@ -8,6 +8,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- PNG images are no longer decoded when composed: only the header is read, and
+  pixels are decoded once per distinct image when the document is saved. Placing
+  the same PNG 40 times is ~20× faster and allocates ~40× less. Deduplication now
+  keys on the original file bytes instead of hashing decoded pixels.
+  `VectorCanvas.GetImageSizeInPoints` no longer decodes the image either.
+- Documents without page-number spans are no longer laid out a second time when
+  their page count has a different digit count from the initial estimate (99),
+  e.g. every 1–9 page document.
+- Text layout computes each word's width, font, and colour once instead of 4–5
+  times, and memoises wrapped lines and table row heights for the duration of a
+  publish. Text-heavy documents are ~2× faster with about half the allocations.
+- Drawing a page slice of a split table only visits that slice's cells instead
+  of scanning the whole table.
+- Content-stream numbers and escaped text are written straight into the page
+  buffer without temporary strings.
+- New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks` (see
+  `docs/benchmarks.md`).
+
+
+---
+
+## [Unreleased]
+
+### Performance
+- PNG images are no longer decoded when composed: only the header is read, and
+  pixels are decoded once per distinct image when the document is saved. Placing
+  the same PNG 40 times is ~20× faster and allocates ~40× less. Deduplication now
+  keys on the original file bytes instead of hashing decoded pixels.
+  `VectorCanvas.GetImageSizeInPoints` no longer decodes the image either.
+- Documents without page-number spans are no longer laid out a second time when
+  their page count has a different digit count from the initial estimate (99),
+  e.g. every 1–9 page document.
+- Text layout computes each word's width, font, and colour once instead of 4–5
+  times, and memoises wrapped lines and table row heights for the duration of a
+  publish. Text-heavy documents are ~2× faster with about half the allocations.
+- Drawing a page slice of a split table only visits that slice's cells instead
+  of scanning the whole table.
+- Content-stream numbers and escaped text are written straight into the page
+  buffer without temporary strings.
+- New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks` (see
+  `docs/benchmarks.md`).
+
 ---
 
 ## [2.3.0] - 2026-09-26

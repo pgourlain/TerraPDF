@@ -51,14 +51,7 @@ internal static class PngDecoder
                     imgHeight = ReadBigEndianInt32(data, 4);
                     bitDepth = data[8];
                     colorType = data[9];
-                    if (bitDepth != 8)
-                        throw new NotSupportedException(
-                            $"PNG bit depth {bitDepth} is not supported; only 8-bit PNGs are accepted.");
-                    if (colorType != 2 && colorType != 3 && colorType != 4 && colorType != 6)
-                        throw new NotSupportedException(
-                            $"PNG color type {colorType} is not supported; use RGB (2), grayscale+alpha (4), RGBA (6), or indexed (3).");
-                    if (data[12] != 0) // interlace method
-                        throw new NotSupportedException("Interlaced PNGs are not supported.");
+                    ValidateHeader(bitDepth, colorType, data[12]);
                     break;
 
                 case "PLTE":
@@ -94,6 +87,41 @@ internal static class PngDecoder
         byte[] raw = rawMs.ToArray();
 
         return Unfilter(raw, imgWidth, imgHeight, colorType, palette, out alpha);
+    }
+
+    /// <summary>
+    /// Reads the pixel size from the IHDR chunk without decoding any pixel data,
+    /// applying the same format checks as <see cref="Decode"/>. IHDR is required
+    /// to be the first chunk, straight after the 8-byte signature.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The data is not a PNG or has no IHDR chunk.</exception>
+    /// <exception cref="NotSupportedException">The PNG uses a bit depth, colour type, or interlacing this decoder does not support.</exception>
+    internal static (int Width, int Height) ReadHeader(ReadOnlySpan<byte> png)
+    {
+        if (png.Length < 8 || !png[..8].SequenceEqual(Signature))
+            throw new InvalidDataException("Stream does not begin with a valid PNG signature.");
+
+        // 8 signature + 4 length + 4 type + 13 IHDR payload
+        if (png.Length < 8 + 8 + 13 || !png.Slice(12, 4).SequenceEqual("IHDR"u8))
+            throw new InvalidDataException("PNG does not start with an IHDR chunk.");
+
+        var ihdr = png.Slice(16, 13);
+        int width = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(ihdr);
+        int height = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(ihdr[4..]);
+        ValidateHeader(bitDepth: ihdr[8], colorType: ihdr[9], interlace: ihdr[12]);
+        return (width, height);
+    }
+
+    private static void ValidateHeader(int bitDepth, int colorType, int interlace)
+    {
+        if (bitDepth != 8)
+            throw new NotSupportedException(
+                $"PNG bit depth {bitDepth} is not supported; only 8-bit PNGs are accepted.");
+        if (colorType != 2 && colorType != 3 && colorType != 4 && colorType != 6)
+            throw new NotSupportedException(
+                $"PNG color type {colorType} is not supported; use RGB (2), grayscale+alpha (4), RGBA (6), or indexed (3).");
+        if (interlace != 0)
+            throw new NotSupportedException("Interlaced PNGs are not supported.");
     }
 
     // ------------------------------------------------------------

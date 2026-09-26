@@ -27,6 +27,15 @@ internal sealed class TextBlock : Element
     internal List<TextSpan> Spans     { get; } = [];
     internal TextStyle?     SpanStyle { get; set; }
 
+    /// <summary>
+    /// Counts layouts, on the current thread, whose result depends on the total-page
+    /// hint (blocks holding page-number spans). The composer compares it before and
+    /// after a layout pass: when unchanged, re-laying out with the real page count
+    /// would produce the same result and is skipped.
+    /// </summary>
+    [ThreadStatic]
+    internal static int PageCountDependentLayouts;
+
     internal TextBlock(string text) => Spans.Add(new LiteralSpan { Text = text });
     internal TextBlock() { }
 
@@ -36,12 +45,33 @@ internal sealed class TextBlock : Element
     /// A single word-level unit ready for line-packing.
     /// <c>Text</c> carries the page-count placeholder for page-number spans;
     /// the actual value is substituted at draw time via the flags.
+    /// <c>Font</c>, <c>Color</c> and <c>Width</c> are resolved once when the token is
+    /// created (see <see cref="Create"/>) and reused by line breaking, measuring and drawing.
     /// </summary>
     internal readonly record struct TextToken(
-        string    Text,
-        TextStyle Style,
-        bool      IsPageNumber,
-        bool      IsTotalPages);
+        string       Text,
+        TextStyle    Style,
+        bool         IsPageNumber,
+        bool         IsTotalPages,
+        ResolvedFont Font,
+        PdfColor     Color,
+        double       Width)
+    {
+        internal static TextToken Create(string text, TextStyle style, ResolvedFont font, PdfColor color,
+            bool isPageNumber = false, bool isTotalPages = false) =>
+            new(text, style, isPageNumber, isTotalPages, font, color, Measure(text, style, font));
+
+        /// <summary>Same token showing different text (a fragment or a page number), re-measured.</summary>
+        internal TextToken WithText(string text) =>
+            this with { Text = text, Width = Measure(text, Style, Font) };
+
+        private static double Measure(string text, TextStyle style, ResolvedFont font) =>
+            FontMetrics.MeasureWidth(text, style.Size ?? 12, font,
+                style.IsBold ?? false, style.IsItalic ?? false);
+    }
+
+    private static ResolvedFont ResolveFont(TextStyle style) =>
+        PdfFonts.ResolveFont(style.Family, style.IsBold ?? false, style.IsItalic ?? false);
 
     /// <summary>
     /// Breaks all spans into word-level <see cref="TextToken"/>s with fully resolved styles.
@@ -52,17 +82,19 @@ internal sealed class TextBlock : Element
         foreach (var span in Spans)
         {
             TextStyle s = baseStyle.MergeWith(span.Style);
+            var font  = ResolveFont(s);
+            var color = PdfColor.FromHex(s.Color ?? "#000000");
             switch (span)
             {
                 case LiteralSpan ls:
                     foreach (string word in SplitWords(ls.Text))
-                        tokens.Add(new TextToken(word, s, false, false));
+                        tokens.Add(TextToken.Create(word, s, font, color));
                     break;
                 case PageNumberSpan:
-                    tokens.Add(new TextToken(pageNum,    s, true,  false));
+                    tokens.Add(TextToken.Create(pageNum,    s, font, color, isPageNumber: true));
                     break;
                 case TotalPagesSpan:
-                    tokens.Add(new TextToken(totalPages, s, false, true));
+                    tokens.Add(TextToken.Create(totalPages, s, font, color, isTotalPages: true));
                     break;
             }
         }
@@ -98,14 +130,6 @@ internal sealed class TextBlock : Element
         }
     }
 
-    private static double TokenWidth(in TextToken t)
-    {
-        bool bold = t.Style.IsBold ?? false;
-        bool italic = t.Style.IsItalic ?? false;
-        var font = PdfFonts.ResolveFont(t.Style.Family, bold, italic);
-        return FontMetrics.MeasureWidth(t.Text, t.Style.Size ?? 12, font, bold, italic);
-    }
-
     // -- Line building -----------------------------------------------------
 
     /// <summary>One wrapped line and whether it ends a paragraph (last line / hard-break line).</summary>
@@ -137,7 +161,7 @@ internal sealed class TextBlock : Element
             if (current.Count == 0 && string.IsNullOrWhiteSpace(token.Text))
                 continue;
 
-            double tw = TokenWidth(token);
+            double tw = token.Width;
 
             // Token overflows the current line – wrap first
             if (lineW + tw > availableWidth && current.Count > 0)
@@ -163,7 +187,7 @@ internal sealed class TextBlock : Element
                 for (int f = 0; f < fragments.Count - 1; f++)
                     lines.Add(new WrappedLine([fragments[f]], IsLastInParagraph: false));
                 placed = fragments[^1];
-                tw     = TokenWidth(placed);
+                tw     = placed.Width;
             }
 
             current.Add(placed);
@@ -196,13 +220,13 @@ internal sealed class TextBlock : Element
             while (end < text.Length)
             {
                 int next = end + (char.IsHighSurrogate(text[end]) && end + 1 < text.Length ? 2 : 1);
-                double cw = TokenWidth(token with { Text = text[end..next] });
+                double cw = token.WithText(text[end..next]).Width;
                 if (end > start && w + cw > availableWidth)
                     break;
                 w   += cw;
                 end  = next;
             }
-            fragments.Add(token with { Text = text[start..end] });
+            fragments.Add(token.WithText(text[start..end]));
             start = end;
         }
         return fragments;
@@ -224,16 +248,49 @@ internal sealed class TextBlock : Element
     /// <see cref="Measure"/>, <see cref="Draw"/>, and the pagination engine's
     /// line-splitting path, so all three always agree on line breaks.
     /// </summary>
+    /// <remarks>
+    /// Within one <see cref="LayoutPass"/> the result of the last call is memoised:
+    /// the same block is measured by its parents, by the pagination engine and again
+    /// when drawn, usually at the same width. The page-count hint is part of the key
+    /// only for blocks that hold page-number spans. The returned lines are shared and
+    /// must not be mutated.
+    /// </remarks>
     internal (List<WrappedLine> Lines, TextStyle Resolved, double LineHeight) LayoutLines(
         double w, TextStyle? defaultStyle, int totalPagesHint)
     {
+        bool hasPageNumbers = Spans.Exists(s => s is PageNumberSpan or TotalPagesSpan);
+        if (hasPageNumbers)
+            PageCountDependentLayouts++;
+
+        int pass = LayoutPass.Current;
+        var cached = _layoutCache;
+        if (pass != 0 && cached is not null && cached.Pass == pass && cached.Width == w
+            && ReferenceEquals(cached.DefaultStyle, defaultStyle)
+            && (!hasPageNumbers || cached.TotalPagesHint == totalPagesHint))
+        {
+            return cached.Result;
+        }
+
         TextStyle resolved = (defaultStyle ?? TextStyle.Default).MergeWith(SpanStyle);
         double    lineH    = (resolved.Size ?? 12) * (resolved.LineHeightMultiplier ?? 1.4);
 
         string placeholder = totalPagesHint.ToString(CultureInfo.InvariantCulture);
         var tokens = Tokenize(resolved, placeholder, placeholder);
-        return (BuildLines(tokens, w), resolved, lineH);
+        var result = (BuildLines(tokens, w), resolved, lineH);
+
+        if (pass != 0)
+            _layoutCache = new LayoutCacheEntry(pass, w, defaultStyle, totalPagesHint, result);
+        return result;
     }
+
+    /// <summary>The last <see cref="LayoutLines"/> result and the inputs it was computed for.</summary>
+    private sealed record LayoutCacheEntry(
+        int Pass, double Width, TextStyle? DefaultStyle, int TotalPagesHint,
+        (List<WrappedLine> Lines, TextStyle Resolved, double LineHeight) Result);
+
+    // Replaced as a whole (never mutated), so concurrent publishes of the same
+    // document at worst recompute a layout.
+    private LayoutCacheEntry? _layoutCache;
 
     internal override ElementSize Measure(double w, double h, TextStyle? defaultStyle = null,
         int totalPagesHint = DefaultTotalPagesHint)
@@ -243,7 +300,7 @@ internal sealed class TextBlock : Element
         // Return the width of the widest line so that container-level alignment elements
         // (AlignCenter, AlignRight) can compute the correct offset.
         double contentW = lines.Count > 0
-            ? lines.Max(l => l.Tokens.Sum(t => TokenWidth(t)))
+            ? lines.Max(l => l.Tokens.Sum(t => t.Width))
             : 0;
 
         return new ElementSize(contentW, lines.Count * lineH);
@@ -261,14 +318,13 @@ internal sealed class TextBlock : Element
         List<DecorationStroke> decorations)
     {
         double sf  = token.Style.Size    ?? 12;
-        string sh  = token.Style.Color   ?? "#000000";
         bool   sb  = token.Style.IsBold  ?? false;
         bool   si  = token.Style.IsItalic ?? false;
-        var    sc  = PdfColor.FromHex(sh);
-        var    font = PdfFonts.ResolveFont(token.Style.Family, sb, si);
+        var    sc  = token.Color;
+        var    font = token.Font;
 
         double bl = lineY + sf;
-        double tw = FontMetrics.MeasureWidth(token.Text, sf, font, sb, si);
+        double tw = token.Width;
 
         if (font.IsCustom)
             ctx.Page.ShowTextAtCustomFont(token.Text, x, bl, sf, sc, font.Custom!);
@@ -291,9 +347,9 @@ internal sealed class TextBlock : Element
     private static TextToken ResolveDynamicText(in TextToken t, DrawingContext ctx)
     {
         if (t.IsPageNumber)
-            return t with { Text = ctx.PageNumber.ToString(CultureInfo.InvariantCulture) };
+            return t.WithText(ctx.PageNumber.ToString(CultureInfo.InvariantCulture));
         if (t.IsTotalPages)
-            return t with { Text = ctx.TotalPages.ToString(CultureInfo.InvariantCulture) };
+            return t.WithText(ctx.TotalPages.ToString(CultureInfo.InvariantCulture));
         return t;
     }
 
@@ -354,7 +410,7 @@ internal sealed class TextBlock : Element
             {
                 // Justify: skip whitespace tokens, distribute extra space between word gaps.
                 var    words    = lineTokens.Where(t => !string.IsNullOrWhiteSpace(t.Text)).ToList();
-                double wordsW   = words.Sum(t => TokenWidth(t));
+                double wordsW   = words.Sum(t => t.Width);
                 int    gapCount = words.Count - 1;
                 double extra    = gapCount > 0 ? (ctx.Width - wordsW) / gapCount : 0;
 
@@ -363,7 +419,7 @@ internal sealed class TextBlock : Element
                 foreach (var token in words)
                 {
                     Show(token, curX);
-                    curX += TokenWidth(token);
+                    curX += token.Width;
                     if (wordIdx < gapCount)
                         curX += extra;
                     wordIdx++;
@@ -372,7 +428,7 @@ internal sealed class TextBlock : Element
             else
             {
                 // Left / Center / Right: preserve natural whitespace widths.
-                double totalLineW = lineTokens.Sum(t => TokenWidth(t));
+                double totalLineW = lineTokens.Sum(t => t.Width);
                 double curX = lineAlignment switch
                 {
                     TextAlignment.Right  => ctx.X + ctx.Width - totalLineW,
@@ -384,7 +440,7 @@ internal sealed class TextBlock : Element
                 {
                     if (!string.IsNullOrEmpty(token.Text))
                         Show(token, curX);
-                    curX += TokenWidth(token);
+                    curX += token.Width;
                 }
             }
 
