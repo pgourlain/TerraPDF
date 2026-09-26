@@ -52,3 +52,7 @@ appsettings.*.json
 pdf-output/
 # ── BenchmarkDotNet ───────────────────────────────────────────────
 BenchmarkDotNet.Artifacts/
+
+# ── Python (tools/pdf-compare) ─────────────────────────────────────
+__pycache__/
+.venv/

@@ -28,30 +28,37 @@ content), and what it means for a service: pages per second in a container.
 | – | QR code generation (found profiling QR documents) | Done, see [QR codes and vector content](#progress--qr-codes-and-vector-content-2026-09-26) |
 | – | Number formatting in content streams | Done, same section |
 | – | Throughput in a container (pages per second) | Measured, see [Throughput in a container](#throughput-in-a-container-pages-per-second) |
-| Phase 3 | Parallel compression, streaming output, compression option, parallel rendering | Open, see [plan D](#d-phase-3) |
+| – | Converted images cached across documents | Done, see [Image cache, parallel compression, tools](#progress--image-cache-parallel-compression-tools-2026-09-26) |
+| Phase 3 | D1 parallel compression | Done, same section |
+| Phase 3 | D2 streaming output, D3 compression option, D4 parallel rendering | Open, see [Still open](#still-open) |
+| – | Verification scripts committed (`tools/pdf-compare`) | Done |
 
 ### Headline results (baseline → now)
 
-In a container limited to 2 CPUs and 1 GB (Docker, Linux arm64, .NET 10, Server GC):
+In a container limited to 2 CPUs and 1 GB (Docker, Linux arm64, .NET 10, Server GC), with
+the same logo in every document as in a real service:
 
 | Document | Pages per second | Pages per minute | CPU per page | Allocated per page |
 |---|---:|---:|---:|---:|
-| Invoice (1 page: logo, table, QR code) | 362 → **682** (×1.9) | 21,700 → **40,900** | 4.8 → 2.3 ms | 9.4 → 2.8 MB |
-| Annual report (19 pages: text, tables, charts) | 3,080 → **8,600** (×2.8) | 185,000 → **516,000** | 0.62 → 0.20 ms | 1.2 MB → 276 KB |
+| Invoice (1 page: logo, table, QR code) | 356 → **10,209** (×29) | 21,300 → **612,600** | 4.80 → 0.19 ms | 9.4 MB → 328 KB |
+| Annual report (19 pages: text, tables, charts) | 3,097 → **25,156** (×8.1) | 185,800 → **1,509,300** | 0.62 → 0.08 ms | 1.2 MB → 143 KB |
+
+With a different image in every document (cold image cache), the figures stay close to the
+previous step: about 670 invoice pages/s and 8,800 report pages/s.
 
 Single-operation benchmarks (BenchmarkDotNet):
 
 | Benchmark | Time | Allocated |
 |---|---:|---:|
 | Invoice30Lines | 0.81 → 0.14 ms (−83%) | 1.9 MB → 390 KB |
-| LongText 500 pages | 422 → 64 ms (−85%) | 1,186 → 89 MB |
-| PlainTable 10,000 rows | 283 → 99 ms (−65%) | 645 → 79 MB |
+| LongText 500 pages | 422 → 59 ms (−86%) | 1,186 → 89 MB |
+| PlainTable 10,000 rows | 283 → 82 ms (−71%) | 645 → 79 MB |
 | TableWithSpans 10,000 rows | 187 → 36 ms (−81%) | 461 → 40 MB |
 | LatinDocument10Pages (Lato) | 15.1 → 6.9 ms (−54%) | 28.5 → 3.1 MB |
 | PngDocument ×40 | 93.9 → 3.6 ms (−96%) | 323 → 2.6 MB |
 | Unencrypted 20 pages | 13.8 → 1.3 ms (−91%) | 38.3 → 3.6 MB |
 | Document100QrCodes | 25.0 → 10.7 ms (−57%) | 9.2 → 4.0 MB |
-| DenseCanvas ×100 | 26.2 → 15.1 ms (−42%) | 21.0 → 7.2 MB |
+| DenseCanvas ×100 | 26.2 → 5.0 ms (−81%) | 21.0 → 7.4 MB |
 
 ## Environment
 
@@ -527,7 +534,7 @@ Verification:
 | Document100QrCodes | 25.0 ms | 24.5 ms | 24.6 ms | 9.2 → 4.5 MB |
 | DenseCanvas ×100 | 26.2 ms | 24.0 ms | 24.0 ms | 21.0 → 7.2 MB |
 
-### Still open at that point (superseded by [Still open](#still-open-1) at the end)
+### Still open at that point (superseded by [Still open](#still-open) at the end)
 
 - Phase 3 ([plan D](#d-phase-3)): parallel compression, streaming output, a compression-level
   option, parallel rendering.
@@ -660,16 +667,79 @@ except for three deliberate changes, each verified visually and on extracted tex
 - PNG passthrough (item 7);
 - corrected font widths (plan A).
 
+## Progress — image cache, parallel compression, tools (2026-09-26)
+
+### Converted images cached across documents
+
+The throughput runs showed that the invoice spent most of its CPU on its logo. Every document
+decoded the RGBA PNG (about 2.4 MB of pixels on the large object heap) and compressed it
+again. That also caused 8,700 Gen2 collections in 30 s.
+
+- `EncodedImageCache` keeps the **finished streams** (compressed RGB plus compressed alpha)
+  in a process-wide LRU bounded to 32 MB, keyed by the SHA-256 of the file. Images larger than
+  a quarter of the budget are not cached. A hit skips both decoding and Deflate.
+- The streams are cached before encryption, which is still applied per object, and compression
+  is deterministic, so a cached entry gives exactly the bytes of a fresh conversion. Tests check
+  this and the budget (`EncodedImageCacheTests`); samples are byte-identical.
+- `ImageBenchmarks.PngDocument` now measures the warm cache: 3.5 ms → **20 µs**, 2.6 MB → 90 KB.
+  `PngDocumentColdCache` keeps the first-document cost visible (3.5 ms).
+
+### D1. Parallel compression of page content
+
+Documents with at least 8 pages and 512 K characters of content compress their page streams
+with `Parallel.For`; results are placed by page index, so output is identical (checked by
+`ParallelCompressionTests`, which compares with the sequential path). Smaller documents stay
+sequential, so invoices and short reports, and a service already using every core, are not
+affected.
+
+| Benchmark | Before D1 | After D1 |
+|---|---:|---:|
+| DenseCanvas ×100 | 15.1 ms | 5.0 ms (−67%) |
+| PlainTable 1,000 rows | 5.2 ms | 3.4 ms (−35%) |
+| PlainTable 10,000 rows | 99 ms | 82 ms (−17%) |
+| LongText 500 pages | 64 ms | 59 ms (−7%) |
+
+### Throughput in a container, after these steps
+
+Same setup as before (`run-comparison.sh 61f5c50 2 1g 30`):
+
+| | Invoice, before | Invoice, after | Report, before | Report, after |
+|---|---:|---:|---:|---:|
+| **Pages per second** | 356 | **10,209** | 3,097 | **25,156** |
+| **Pages per minute** | 21,300 | **612,600** | 185,800 | **1,509,300** |
+| CPU per page | 4.80 ms | 0.19 ms | 0.62 ms | 0.08 ms |
+| Allocated per page | 9.4 MB | 328 KB | 1.2 MB | 143 KB |
+| Gen2 collections in 30 s | 8,708 | 3 | 4,522 | 60 |
+| Peak working set | 101 MB | 71 MB | 117 MB | 103 MB |
+| Latency p50 per document | 4.6 ms | 0.17 ms | 11.3 ms | 1.5 ms |
+
+The report gains too, because its cover uses the same RGBA logo: converting it was about
+3.5 ms of the 3.9 ms of CPU each report took after the previous step. These figures assume
+images are reused across documents. With a different image in every document, expect the
+previous step's figures (about 670 and 8,800 pages/s).
+
+### Verification tools committed
+
+The scratch scripts are now in [`tools/pdf-compare`](../tools/pdf-compare/README.md), with
+repository-relative paths, and each was run from there:
+- sample generation and byte comparison;
+- visual and text comparison, glyph positions;
+- PNG round trip;
+- font widths against a viewer;
+- the QR symbol reference (`reference-symbols.txt`, produced by the original encoder);
+- the allocation and CPU profiling helpers.
+
 ## Still open
 
 | Item | Expected gain | Notes |
 |---|---|---|
-| Cache decoded images across documents (process-wide, bounded, keyed by content hash), or pool the PNG decode buffers | Invoice-type documents: fewer Gen2 collections, higher throughput | Logos are the same in every document of a service |
-| Phase 3 (plan D): parallel compression, streaming output, compression-level option | Save step ×2–3 on multi-page documents; lower peak memory | D1/D2 keep output identical |
+| D2: stream objects to the output instead of collecting them in `binaryObjects` | Lower peak memory on large documents | Output identical |
+| D3: compression-level option (`Fastest` / `Optimal`) | Faster saves for bulk generation | Public API addition; `Optimal` stays the default |
 | C1: content buffer in bytes instead of UTF-16 | Content memory halved, no encoding step | Mechanical refactor of `PdfPage` |
 | N2 / Q2 / C2: shorter numbers, merged QR rectangles, graphics-state caching | Smaller content streams | Change output; need visual checks |
 | Table scaling at very large sizes | GC over the live document tree | Needs a document-model change |
-| Commit the verification scripts under `tools/pdf-compare/` | Repeatable checks | Currently scratch scripts |
+| Phase 0 leftovers: `LongText` 5- and 150-page variants; a committed baseline measured with the default job | Better coverage, less noisy comparisons | — |
+| D4: parallel page rendering | Latency of very large documents | High risk; only if benchmarks justify it |
 
 ## Verification tools
 
@@ -682,6 +752,7 @@ be committed under `tools/pdf-compare/` so later work can be checked the same wa
 | Visual and text comparison | PyMuPDF renders every page at 110 dpi and counts pixels differing by more than 24 per channel; also compares the extracted text of every page. | Changes that alter content streams (item 9) |
 | Glyph positions | PyMuPDF `rawdict` glyph origins, compared line by line; reports the largest shift per file. | Text-run merging (item 9), width tables (plan A) |
 | Width tables vs viewer | Every WinAnsi character drawn as one run per built-in variant; MuPDF glyph origins compared with cumulative AFM widths. | Width tables (plan A) |
+| (all tools below) | Committed under [`tools/pdf-compare`](../tools/pdf-compare/README.md). | — |
 | QR symbol dump | 458 symbols (4 levels × lengths covering versions 1–40) hashed module by module, compared before and after. | QR generation (Q1) |
 | Fixed-point formatter | 20 million values compared with `ToString("F2"/"F4")`; a sample is kept as a unit test (`PdfRealTests`). | Number formatting (N1) |
 | CPU profile | `dnx dotnet-trace collect --profile dotnet-common,dotnet-sampled-thread-time` on a small harness, stacks aggregated with TraceEvent; helpers temporarily marked `NoInlining` to split inlined time. | QR and canvas (Q1, N1) |

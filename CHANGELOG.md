@@ -53,11 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Content-stream numbers (`F2`/`F4` coordinates and colours) are written by a
   fixed-point formatter instead of the general floating-point one, with
   byte-identical output: vector-heavy pages are ~35% faster.
+- PNG images with an alpha channel are converted (decoded and compressed) once
+  per process: the resulting streams are kept in a bounded (32 MB) process-wide
+  cache keyed by the file's SHA-256, so a logo rendered into every document is
+  no longer decoded again for each one. Output is identical.
+- Large documents (8 pages or more and at least 512 K characters of content)
+  compress their page content streams in parallel. Output is identical.
 - New BenchmarkDotNet suite in `benchmarks/TerraPDF.Benchmarks`, and a throughput
   harness (`benchmarks/TerraPDF.Throughput`) that measures pages per second, CPU
   and memory, in or out of a container, and compares two versions (see
-  `docs/benchmarks.md`). In a 2-CPU / 1 GB container, invoices went from 362 to
-  682 pages/s and a 19-page annual report from 3,080 to 8,600 pages/s.
+  `docs/benchmarks.md`). In a 2-CPU / 1 GB container, with the logo cache warm,
+  invoices went from 356 to 10,200 pages/s and a 19-page annual report from
+  3,100 to 25,200 pages/s.
+- Output-comparison and profiling tools in `tools/pdf-compare` (byte, visual and
+  glyph-position comparison, PNG round trip, font-width check against a viewer,
+  QR symbol reference, allocation and CPU profiling).
 
 ### Fixed
 - Built-in font widths now match the Adobe AFM metrics for every WinAnsi

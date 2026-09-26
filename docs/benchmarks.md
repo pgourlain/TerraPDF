@@ -16,7 +16,7 @@ in-memory stream: disk I/O is never part of the numbers.
 | `TextBenchmarks` | 10 / 100 / 500 pages of wrapped paragraphs, the same volume as per-word styled spans, and non-WinAnsi text with a built-in font |
 | `TableBenchmarks` | 100 / 1 000 / 10 000 rows: plain table with a repeating header, and a table with row and column spans |
 | `FontBenchmarks` | TrueType parsing (Lato, Noto Sans Devanagari), glyph subsetting, 10-page documents in an embedded Latin font and in Devanagari (GSUB shaping) |
-| `ImageBenchmarks` | PNG and alpha PNG decoding, documents placing the same RGBA PNG / RGB PNG (embedded without decoding) / alpha PNG / JPEG 1 and 40 times |
+| `ImageBenchmarks` | PNG and alpha PNG decoding; documents placing the same RGBA PNG (warm and cold image cache), RGB PNG (embedded without decoding), alpha PNG and JPEG 1 and 40 times |
 | `EncryptionBenchmarks` | 20-page document unencrypted vs AES-128 vs AES-256 |
 | `QrCodeBenchmarks` | QR code generation (short/long payload, ECC level L and H) |
 | `BarcodeBenchmarks` | Code128 encoding, a document with 100 QR codes |
@@ -123,9 +123,21 @@ git worktree) and against your working tree:
 benchmarks/TerraPDF.Throughput/run-comparison.sh 61f5c50 2 1g 30
 ```
 
+The scenarios reuse the same logo in every document, like a real service, so after the
+first document the converted image comes from TerraPDF's process-wide image cache. A
+workload with a different image in every document behaves like the cold case
+(`ImageBenchmarks.PngDocumentColdCache`).
+
 Results are printed and appended as JSON lines to
 `BenchmarkDotNet.Artifacts/throughput/results.jsonl`. The harness only uses public API that
 exists in every compared version; if you add to it, keep it that way.
+
+## Checking that output did not change
+
+Performance changes should normally leave the PDFs byte-identical. `tools/pdf-compare`
+has the scripts to check it (sample byte comparison, visual and text comparison, glyph
+positions, PNG round trip, font widths against a viewer, QR symbols) and the profiling
+helpers; see [tools/pdf-compare/README.md](../tools/pdf-compare/README.md).
 
 ## Adding a benchmark
 

@@ -734,6 +734,9 @@ internal sealed class PdfPage
     //  Serialization
     // --------------------------------------------------------------
 
+    /// <summary>Length of the content stream in characters (= bytes once encoded).</summary>
+    internal int ContentLength => _ops.Length;
+
     /// <summary>
     /// Writes the content stream to <paramref name="output"/> as Latin-1 bytes, encoding
     /// the operator buffer chunk by chunk instead of materialising it as one string and
